@@ -114,7 +114,7 @@ php -r '
 $issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
 $denied=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code"],"scope-forbidden-entrypoint-method")));
 $incomplete=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code"],"scope-graph-incomplete")));
-if (count($denied)!==8 || count($incomplete)!==10) throw new RuntimeException("Expanded dispatch classification changed.");
+if (count($denied)!==8 || count($incomplete)!==12) throw new RuntimeException("Expanded dispatch classification changed.");
 $reasons=implode(" ",array_column($incomplete,"message"));
 foreach (["Nested or indirect dispatch", "Dynamic function", "Dynamic or relative construction", "not a static method", "Unresolved instance receiver", "Unproven callback invocation", "function:App\\dynamicHelper", "Unproven Symfony container lookup", "Symfony container lookup result escapes immediate call"] as $reason) if (!str_contains($reasons,$reason)) throw new RuntimeException("Missing dispatch gap: ".$reason);
 $edges=[];
@@ -142,7 +142,7 @@ php -r '
 $issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
 $denied=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code"],"scope-forbidden-entrypoint-method")));
 $incomplete=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code"],"scope-graph-incomplete")));
-if (count($denied)!==13 || $incomplete!==[]) throw new RuntimeException("Complete readonly dispatch corpus is not complete.");
+if (count($denied)!==14 || $incomplete!==[]) throw new RuntimeException("Complete readonly dispatch corpus is not complete.");
 $edges=[];
 foreach ($denied as $issue) {
     $proof=json_decode(substr($issue["notes"][0],strlen("graph-evidence: ")),true,512,JSON_THROW_ON_ERROR);
@@ -153,6 +153,7 @@ foreach ($denied as $issue) {
 if (!in_array("literal constructor call",$edges,true)) throw new RuntimeException("Constructor call was not included in the graph.");
 if (count(array_filter($edges,fn($edge)=>$edge==="project function call"))<3) throw new RuntimeException("Complete project function paths were not included.");
 foreach (["gateway.service", "gateway.alias", "App\\Gateway"] as $id) if (!str_contains(implode(" ",$edges),"Symfony literal service ID ".$id." -> App\\Gateway")) throw new RuntimeException("Literal container lookup was not proven: ".$id);
+if (!in_array("Symfony single-use local service ID gateway.alias -> App\\Gateway",$edges,true)) throw new RuntimeException("Single-use local service lookup was not proven.");
 echo "Complete readonly dispatch corpus passed\n";
 ' "$report"
 set +e
