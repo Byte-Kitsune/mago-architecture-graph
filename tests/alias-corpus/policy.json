@@ -14,11 +14,15 @@
     "namespace_root":"App",
     "scopes":[
       {"id":"entry","path_prefix":"src/Entry.php","namespace_prefix":"App\\"},
+      {"id":"ordinary","path_prefix":"src/OrdinaryEntry.php","namespace_prefix":"App\\"},
+      {"id":"ordinary-attribute","path_prefix":"src/OrdinaryAttributeEntry.php","namespace_prefix":"App\\"},
       {"id":"named","path_prefix":"src/NamedEntry.php","namespace_prefix":"App\\"},
       {"id":"attribute","path_prefix":"src/AttributeEntry.php","namespace_prefix":"App\\"}
     ],
     "method_permissions":[
       {"scope_id":"entry","target_type":"App\\Gateway","method":"expensive","decision":"deny","policy_id":"entry-expensive","rationale":"Fixture limit"},
+      {"scope_id":"ordinary","target_type":"App\\Gateway","method":"expensive","decision":"deny","policy_id":"ordinary-expensive","rationale":"Fixture limit"},
+      {"scope_id":"ordinary-attribute","target_type":"App\\AsAliasGateway","method":"expensive","decision":"deny","policy_id":"ordinary-attribute-expensive","rationale":"Fixture limit"},
       {"scope_id":"named","target_type":"App\\AdminGateway","method":"expensive","decision":"deny","policy_id":"named-expensive","rationale":"Fixture limit"},
       {"scope_id":"attribute","target_type":"App\\AsAliasGateway","method":"expensive","decision":"deny","policy_id":"attribute-expensive","rationale":"Fixture limit"}
     ],

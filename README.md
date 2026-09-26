@@ -1,6 +1,6 @@
 # Mago Architecture Graph
 
-**Beta: 0.1.0-beta.6.** This release checks explicit path-aware module
+**Beta: 0.1.0-beta.7.** This release checks explicit path-aware module
 boundaries and adds a narrow, deterministic call graph. Keep existing
 graph gates until its evidence has been compared on the same project.
 
@@ -53,19 +53,20 @@ paths through a real Mago 1.50 Analyzer worker. The smoke corpus is fictional.
 
 The optional `scope_graph` policy builds shortest paths from explicit static
 calls and narrowly proven instance calls in the complete configured Mago source
-set. It indexes scope files
-first, then loads only files reached through Mago's method metadata. It does not
-reparse every file in the project. A scope requires both
+set. It scans class-like declaration names through Mago's already-parsed source
+to reject duplicate symbols, then reparses method bodies only in scope files and
+files reached through Mago's method metadata. A scope requires both
 its repository path prefix and namespace prefix. Listed method permissions
 produce native Mago error or note findings with a bounded `graph-evidence` JSON
 note containing the path, policy ID, target declaration and completeness flag.
-Unresolved in-root targets, unsupported dynamic/relative calls, parse failures
+Unresolved in-root targets, unsupported dynamic/relative calls, reached-file parse failures
 and exhausted transitive depth produce `scope-graph-incomplete` errors. A direct
 mode stops after one call without treating later calls as missing coverage.
 The fictional [graph policy](tests/graph-corpus/policy.json) shows a two-hop
 denial and allowance.
 
-For a final class with a private constructor-promoted property, the graph
+For a final class with a private constructor-promoted property or a private
+typed property assigned directly from a matching typed constructor parameter, the graph
 follows `$this->service->method()` when its receiver has a concrete type or a
 literal Symfony binding. Pass the optional type-to-class bindings from
 `mago-symfony-wiring`'s `ServiceMap::classBindings()` to `create()`; named
@@ -76,6 +77,10 @@ configuration binding, the extension also recognizes a unique literal
 metadata. Ambiguous or unsupported aliases are incomplete, never guessed.
 Only files that can implement a reached interface are inspected. The
 [alias corpus](tests/alias-corpus) covers ordinary, named and attribute aliases.
+Ordinary properties require a leading constructor assignment and no later
+class write. Conditional assignments, dynamic writes and mutable properties
+stay incomplete; the [unsafe-property corpus](tests/unsafe-property-corpus)
+checks this rejection.
 
 Reachable recursive components produce `recursive-cycle` errors. A direct
 self-call is classified as `bounded-recursion` only for a final-class method
@@ -88,7 +93,13 @@ remains visible. Detection uses an iterative graph walk, so long chains do not c
 the PHP call stack. Each cycle is reported once per scope, even when several
 entry methods reach it.
 
-Regular property assignments, mutable service receivers, non-final receiver
+The declaration scan uses Mago's syntax index and adds no second full PHP
+parse. Native Mago `parse` diagnostics are separate from this extension and
+must fail the analyzer gate; an individual `graph-evidence.complete` field does
+not prove that every source file parsed. The [duplicate corpus](tests/duplicate-corpus)
+verifies that an ambiguous declaration cannot certify a graph proof.
+
+Other property assignments, mutable service receivers, non-final receiver
 classes, container lookups, decorators, runtime dispatch and indirect callbacks
 still need broader treatment. Unsupported reachable calls emit incomplete
 findings where observable. This beta therefore does not yet replace Argus's
@@ -96,8 +107,10 @@ existing reachability gate or authorize verified-graph repair evidence. Use Mago
 Guard for standard dependencies and keep the Argus graph gate enabled while
 parity is developed.
 
-The extension was exercised against synthetic 20,001-file projects under a
-four-CPU, 4 GiB container limit. Those fixtures are small and regular; results
+The extension was exercised against a synthetic 20,002-file project under a
+four-CPU, 4 GiB container limit. In three runs each, the pre-scan beta took
+0.93–1.01 s and the declaration-scan version took 1.30 s with identical issues.
+Those fixtures are small and regular; results
 do not establish a runtime or memory bound for a large Symfony monolith. Measure
 the complete `mago analyze` command on a representative project before relying
 on it in CI. Keep source discovery and Mago's own analysis costs separate from

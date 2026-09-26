@@ -22,7 +22,7 @@ use PhpParser\ParserFactory;
 final class GraphHook implements AfterAnalysisHook
 {
     /** @param array<string, string> $classBindings */
-    public function __construct(private readonly Policy $policy, private readonly array $classBindings = [], private readonly bool $serviceConfigurationComplete = true) {}
+    public function __construct(private readonly Policy $policy, private readonly array $classBindings = [], private readonly bool $serviceConfigurationComplete = true, private readonly ?DeclarationIndex $declarations = null) {}
 
     public function afterAnalysis(AfterAnalysisContext $context): void
     {
@@ -57,6 +57,7 @@ final class GraphHook implements AfterAnalysisHook
             foreach ($finder->findInstanceOf($statements, Node\Stmt\Class_::class) as $class) {
                 if (!$class->namespacedName instanceof Node\Name) continue;
                 $className = $class->namespacedName->toString();
+                if ($this->declarations?->isDuplicate($className)) continue;
                 $aliasesByClass[strtolower($className)] = self::asAlias($class);
                 $properties = $this->injectedProperties($class, $finder);
                 foreach ($class->getMethods() as $method) {
@@ -109,6 +110,13 @@ final class GraphHook implements AfterAnalysisHook
             if ($scope !== null) $starts[$key] = $scope['id'];
         }
         ksort($starts);
+        if ($this->declarations !== null) {
+            if (!$this->declarations->complete() && $files !== []) {
+                $first = reset($files);
+                $unresolved[] = [$first->file, 0, 'Complete declaration scan was unavailable'];
+            }
+            foreach ($this->declarations->problems() as [$file, $position, $name]) $unresolved[] = [$file, $position, "Duplicate or unresolved class-like declaration {$name}"];
+        }
         if (!$this->serviceConfigurationComplete && $starts !== []) {
             $first = $nodes[array_key_first($starts)];
             $unresolved[] = [$first['file'], $first['position'], 'Trusted Symfony service configuration is incomplete'];
@@ -139,7 +147,7 @@ final class GraphHook implements AfterAnalysisHook
             foreach ($nodes[$key]['unresolved'] as $issue) $unresolved[] = $issue;
             $calls = array_values(array_filter($nodes[$key]['calls'], static fn ($call) => $graph->withinRoot(explode('::', $call['to'], 2)[0])));
             foreach ($calls as $index => $call) {
-                if (!str_starts_with($call['evidence'], 'declared promoted property ')) continue;
+                if (!str_starts_with($call['evidence'], 'declared promoted property ') && !str_starts_with($call['evidence'], 'constructor-attested property ')) continue;
                 [$interface, $method] = explode('::', $call['to'], 2);
                 if ($context->codebase->getInterface($interface) === null) continue;
                 $concrete = $resolveAlias($interface);
@@ -283,41 +291,71 @@ final class GraphHook implements AfterAnalysisHook
         $constructor = $class->getMethod('__construct');
         if ($constructor === null) return [];
         $properties = [];
+        $parameters = [];
         foreach ($constructor->params as $parameter) {
-            if (!$parameter->isPromoted() || !$parameter->isPrivate() || !$parameter->type instanceof Node\Name || !is_string($parameter->var->name)) continue;
+            if (!is_string($parameter->var->name)) continue;
             $name = $parameter->var->name;
-            $type = ($parameter->type->getAttribute('resolvedName') ?? $parameter->type)->toString();
-            $target = null;
-            $invalid = false;
-            foreach ($parameter->attrGroups as $group) foreach ($group->attrs as $attribute) {
-                $attributeName = ($attribute->name->getAttribute('resolvedName') ?? $attribute->name)->toString();
-                if (strcasecmp($attributeName, 'Symfony\\Component\\DependencyInjection\\Attribute\\Target') !== 0) continue;
-                if ($target !== null || count($attribute->args) !== 1 || !$attribute->args[0]->value instanceof Node\Scalar\String_) {
-                    $invalid = true;
-                    continue;
-                }
-                $target = $attribute->args[0]->value->value;
-            }
-            if ($invalid) continue;
-            $key = $target === null ? $type : $type . ' $' . ltrim($target, '$');
-            $bindingKey = strtolower($key);
-            if ($target !== null && !isset($this->classBindings[$bindingKey])) continue;
-            $concrete = $this->classBindings[$bindingKey] ?? $type;
-            $binding = isset($this->classBindings[$bindingKey]) ? "Symfony service alias {$key} -> {$concrete}" : "declared promoted property {$type}";
-            $properties[$name] = [$concrete, $binding];
+            $binding = $this->parameterBinding($parameter);
+            if ($binding === null) continue;
+            $parameters[$name] = $binding;
+            if ($parameter->isPromoted() && $parameter->isPrivate()) $properties[$name] = [$binding[1], $binding[2]];
+        }
+        $declared = [];
+        foreach ($class->getProperties() as $property) {
+            if (!$property->isPrivate() || !$property->type instanceof Node\Name) continue;
+            $type = ($property->type->getAttribute('resolvedName') ?? $property->type)->toString();
+            foreach ($property->props as $declaration) if ($declaration->default === null) $declared[$declaration->name->toString()] = $type;
+        }
+        $allowedAssignments = [];
+        // Only a leading sequence of exact constructor assignments is attested.
+        // Branches, parameter rewrites and later property writes stay unresolved.
+        foreach ($constructor->stmts ?? [] as $statement) {
+            if (!$statement instanceof Node\Stmt\Expression || !$statement->expr instanceof Node\Expr\Assign) break;
+            $assignment = $statement->expr;
+            $property = self::thisProperty($assignment->var);
+            if ($property === null || !isset($declared[$property]) || !$assignment->expr instanceof Node\Expr\Variable || !is_string($assignment->expr->name)) break;
+            $parameter = $assignment->expr->name;
+            if (!isset($parameters[$parameter]) || strcasecmp($declared[$property], $parameters[$parameter][0]) !== 0 || isset($properties[$property])) break;
+            $properties[$property] = [$parameters[$parameter][1], $parameters[$parameter][2]];
+            $allowedAssignments[spl_object_id($assignment)] = true;
         }
         foreach ($finder->find($class->stmts, static fn (Node $node): bool => $node instanceof Node\Expr\Assign || $node instanceof Node\Expr\AssignOp || $node instanceof Node\Expr\AssignRef || $node instanceof Node\Expr\PreInc || $node instanceof Node\Expr\PostInc || $node instanceof Node\Expr\PreDec || $node instanceof Node\Expr\PostDec || $node instanceof Node\Stmt\Unset_ || $node instanceof Node\Arg) as $mutation) {
+            if ($mutation instanceof Node\Expr\Assign && isset($allowedAssignments[spl_object_id($mutation)])) continue;
             $targets = [];
             if ($mutation instanceof Node\Stmt\Unset_) $targets = $mutation->vars;
             elseif ($mutation instanceof Node\Arg) $targets = [$mutation->value];
             elseif ($mutation instanceof Node\Expr\AssignRef) $targets = [$mutation->var, $mutation->expr];
             else $targets = [$mutation->var];
             foreach ($targets as $target) {
+                if ($target instanceof Node\Expr\PropertyFetch && $target->var instanceof Node\Expr\Variable && $target->var->name === 'this' && !$target->name instanceof Node\Identifier) {
+                    $properties = [];
+                    continue;
+                }
                 $name = self::thisProperty($target);
                 if ($name !== null) unset($properties[$name]);
             }
         }
         return $properties;
+    }
+
+    /** @return array{string, string, string}|null Declared type, concrete type and proof. */
+    private function parameterBinding(Node\Param $parameter): ?array
+    {
+        if (!$parameter->type instanceof Node\Name) return null;
+        $type = ($parameter->type->getAttribute('resolvedName') ?? $parameter->type)->toString();
+        $target = null;
+        foreach ($parameter->attrGroups as $group) foreach ($group->attrs as $attribute) {
+            $attributeName = ($attribute->name->getAttribute('resolvedName') ?? $attribute->name)->toString();
+            if (strcasecmp($attributeName, 'Symfony\\Component\\DependencyInjection\\Attribute\\Target') !== 0) continue;
+            if ($target !== null || count($attribute->args) !== 1 || !$attribute->args[0]->value instanceof Node\Scalar\String_) return null;
+            $target = $attribute->args[0]->value->value;
+        }
+        $key = $target === null ? $type : $type . ' $' . ltrim($target, '$');
+        $bindingKey = strtolower($key);
+        if ($target !== null && !isset($this->classBindings[$bindingKey])) return null;
+        $concrete = $this->classBindings[$bindingKey] ?? $type;
+        $proof = isset($this->classBindings[$bindingKey]) ? "Symfony service alias {$key} -> {$concrete}" : "constructor-attested property {$type}";
+        return [$type, $concrete, $proof];
     }
 
     private static function thisProperty(Node $node): ?string
