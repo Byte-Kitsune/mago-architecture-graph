@@ -1,0 +1,21 @@
+{
+  "version": "1",
+  "source_root": "src",
+  "namespace_root": "App",
+  "modules": [
+    {"id":"all","path_pattern":"src/","namespace_prefix":"App\\","layer":"application","allowed_target_layers":[],"entrypoint_suffix":""}
+  ],
+  "scope_graph": {
+    "version":"1",
+    "enabled":true,
+    "mode":"transitive",
+    "max_depth":4,
+    "source_root":"src",
+    "namespace_root":"App",
+    "scopes":[{"id":"entry","path_prefix":"src/Entry.php","namespace_prefix":"App\\"}],
+    "method_permissions":[
+      {"scope_id":"entry","target_type":"App\\First","method":"expensive","decision":"deny","policy_id":"first","rationale":"Fixture limit"}
+    ],
+    "exclusions":[]
+  }
+}

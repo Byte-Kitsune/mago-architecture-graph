@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 use ByteKitsune\MagoArchitectureGraph\Policy;
 use ByteKitsune\MagoArchitectureGraph\GraphPolicy;
+use ByteKitsune\MagoArchitectureGraph\Analyzer\GraphCycles;
+use ByteKitsune\MagoArchitectureGraph\Analyzer\RecursionProof;
+use ByteKitsune\MagoArchitectureGraph\Analyzer\GraphHook;
+use ByteKitsune\MagoArchitectureGraph\Analyzer\CallCollector;
+use PhpParser\NodeFinder;
+use PhpParser\Node\Stmt\Class_;
+use PhpParser\ParserFactory;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
@@ -36,3 +43,41 @@ $invalid = $graphData;
 $invalid['mode'] = 'unknown';
 try { new GraphPolicy($invalid); throw new RuntimeException('Unknown graph mode accepted.'); } catch (InvalidArgumentException) {}
 echo "Graph policy checks passed\n";
+
+$parser = (new ParserFactory())->createForNewestSupportedVersion();
+$finder = new NodeFinder();
+foreach ([
+    'if ($n <= 0) return; self::walk($n - 1);' => true,
+    'if ($n === 0) return; self::walk($n - 1);' => false,
+    'if ($n <= 0) return; self::walk($n);' => false,
+    'if ($n <= 0) return; self::walk($n - 1); self::walk($n - 1);' => false,
+] as $body => $expected) {
+    $parsed = $parser->parse('<?php final class Walk { public static function walk(int $n): void {' . $body . '} }');
+    $class = $finder->findFirstInstanceOf($parsed, Class_::class);
+    if (!$class instanceof Class_ || RecursionProof::bounded($class, $class->getMethod('walk'), 'Walk') !== $expected) throw new RuntimeException('Recursion breaker proof mismatch.');
+}
+$chain = [];
+for ($index = 0; $index < 20_000; $index++) $chain['n' . $index] = $index === 19_999 ? [] : ['n' . ($index + 1)];
+if (GraphCycles::find($chain) !== []) throw new RuntimeException('Long acyclic chain was misclassified.');
+$chain['n19999'] = ['n19998'];
+if (GraphCycles::find($chain) !== [['n19998', 'n19999']]) throw new RuntimeException('Iterative cycle detection failed.');
+echo "Recursion checks passed\n";
+
+$asAlias = new ReflectionMethod(GraphHook::class, 'asAlias');
+foreach ([
+    '#[\\Symfony\\Component\\DependencyInjection\\Attribute\\AsAlias(Port::class)]' => 'Port',
+    '#[\\Symfony\\Component\\DependencyInjection\\Attribute\\AsAlias("port")]' => false,
+    '#[\\Symfony\\Component\\DependencyInjection\\Attribute\\AsAlias(target: Port::class)]' => false,
+] as $attribute => $expected) {
+    $parsed = $parser->parse('<?php ' . $attribute . ' final class Service {}');
+    $class = $finder->findFirstInstanceOf($parsed, Class_::class);
+    if (!$class instanceof Class_ || $asAlias->invoke(null, $class) !== $expected) throw new RuntimeException('Symfony AsAlias shape mismatch.');
+}
+echo "AsAlias shape checks passed\n";
+
+$parsed = $parser->parse('<?php final class Deferred { public function run(): void { $later = function () { Gateway::denied(); }; Service::run(); } }');
+$class = $finder->findFirstInstanceOf($parsed, Class_::class);
+if (!$class instanceof Class_) throw new RuntimeException('Call collector fixture missing.');
+[$direct, $instance, $unknown] = CallCollector::collect($class->getMethod('run')->stmts);
+if (count($direct) !== 1 || count($instance) !== 0 || count($unknown) !== 1 || $direct[0]->name->toString() !== 'run') throw new RuntimeException('Deferred closure was treated as an immediate graph edge.');
+echo "Call collection checks passed\n";

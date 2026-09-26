@@ -1,7 +1,7 @@
 # Mago Architecture Graph
 
-**Beta: 0.1.0-beta.3.** This release checks explicit path-aware module
-boundaries and adds a narrow, deterministic static-call graph. Keep existing
+**Beta: 0.1.0-beta.4.** This release checks explicit path-aware module
+boundaries and adds a narrow, deterministic call graph. Keep existing
 graph gates until its evidence has been compared on the same project.
 
 This is a Mago **Analyzer Plugin**. Mago 1.50 does not expose an extension API
@@ -52,7 +52,8 @@ Run `composer install` and `sh tests/smoke.sh` to exercise positive and negative
 paths through a real Mago 1.50 Analyzer worker. The smoke corpus is fictional.
 
 The optional `scope_graph` policy builds shortest paths from explicit static
-method calls in the complete configured Mago source set. It indexes scope files
+calls and narrowly proven instance calls in the complete configured Mago source
+set. It indexes scope files
 first, then loads only files reached through Mago's method metadata. It does not
 reparse every file in the project. A scope requires both
 its repository path prefix and namespace prefix. Listed method permissions
@@ -64,11 +65,34 @@ mode stops after one call without treating later calls as missing coverage.
 The fictional [graph policy](tests/graph-corpus/policy.json) shows a two-hop
 denial and allowance.
 
-This graph subset currently does not trace instance calls, Symfony service
-aliases, runtime dispatch or recursive call termination. Those gaps prevent it from
-replacing Argus's existing reachability gate or its verified-graph repair
-evidence. Use Mago Guard for standard dependencies and keep the Argus graph gate
-enabled while parity is developed.
+For a final class with a private constructor-promoted property, the graph
+follows `$this->service->method()` when its receiver has a concrete type or a
+literal Symfony binding. Pass the optional type-to-class bindings from
+`mago-symfony-wiring`'s `ServiceMap::classBindings()` to `create()`; named
+`#[Target('name')]` bindings use the `Interface $name` key. The optional fourth
+argument must be `false` when that service map is incomplete. Without a
+configuration binding, the extension also recognizes a unique literal
+`#[AsAlias(Interface::class)]` on an implementation returned by Mago's interface
+metadata. Ambiguous or unsupported aliases are incomplete, never guessed.
+Only files that can implement a reached interface are inspected. The
+[alias corpus](tests/alias-corpus) covers ordinary, named and attribute aliases.
+
+Reachable recursive components produce `recursive-cycle` errors. A direct
+self-call is classified as `bounded-recursion` only for a final-class method
+whose sole `int` parameter is guarded by an initial `if ($n <= 0) return;`
+(or `$n < 1`) and whose sole remaining statement calls itself with `$n - 1`.
+This proves termination of that narrow shape, not its query cost. Mutual cycles,
+other break conditions and dynamic dispatch remain hard errors or incomplete
+coverage. Detection uses an iterative graph walk, so long chains do not consume
+the PHP call stack.
+
+Regular property assignments, mutable service receivers, non-final receiver
+classes, container lookups, decorators, runtime dispatch and indirect callbacks
+still need broader treatment. Unsupported reachable calls emit incomplete
+findings where observable. This beta therefore does not yet replace Argus's
+existing reachability gate or authorize verified-graph repair evidence. Use Mago
+Guard for standard dependencies and keep the Argus graph gate enabled while
+parity is developed.
 
 The extension was exercised against synthetic 20,001-file projects under a
 four-CPU, 4 GiB container limit. Those fixtures are small and regular; results
