@@ -6,7 +6,7 @@ namespace ByteKitsune\MagoArchitectureGraph;
 
 use InvalidArgumentException;
 
-/** Explicit static-call reachability policy; no inferred runtime dispatch. */
+/** Explicit call reachability policy; unknown runtime dispatch stays incomplete. */
 final class GraphPolicy
 {
     public readonly bool $enabled;
