@@ -181,6 +181,7 @@ final class GraphHook implements AfterAnalysisHook
         $proofs = [];
         $depthWarnings = [];
         $cycleIncomplete = false;
+        $reportedCycles = [];
         foreach ($starts as $startKey => $scopeId) {
             $start = $nodes[$startKey];
             $queue = [[$startKey, []]];
@@ -220,6 +221,9 @@ final class GraphHook implements AfterAnalysisHook
                 }
             }
             foreach (GraphCycles::find($adjacency) as $component) {
+                $cycleKey = $scopeId . ':' . implode(',', $component);
+                if (isset($reportedCycles[$cycleKey])) continue;
+                $reportedCycles[$cycleKey] = true;
                 $first = $nodes[$component[0]];
                 if (count($component) === 1 && $first['bounded_recursion']) {
                     $this->report($context, Level::Note, 'bounded-recursion', "Scope {$scopeId} has a guarded, strictly decreasing self-call in {$first['symbol']}.", $first['file'], $first['position'], $first['position'] + 1);
