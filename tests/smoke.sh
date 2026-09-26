@@ -43,6 +43,7 @@ if (count($proofs)!==3 || count($issues)!==3) throw new RuntimeException("Alias 
 foreach ($proofs as $issue) {
     $proof=json_decode(substr($issue["notes"][0],strlen("graph-evidence: ")),true,512,JSON_THROW_ON_ERROR);
     if (($proof["complete"]??null)!==true || count($proof["edges"]??[])!==1 || !str_starts_with($proof["edges"][0]["evidence"],"Symfony ")) throw new RuntimeException("Alias proof incomplete or misbound.");
+    if ($proof["edges"][0]["to"]!==$proof["target"]) throw new RuntimeException("Alias proof target has noncanonical case.");
 }
 echo "Symfony alias graph corpus passed\n";
 ' "$report"
