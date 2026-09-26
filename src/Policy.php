@@ -71,6 +71,12 @@ final class Policy
         return self::safePath($relative) ? $relative : null;
     }
 
+    public function possibleModulePath(string $path): bool
+    {
+        foreach ($this->modules as $module) if (!($module['excluded'] ?? false) && self::pathMatches($module['path_pattern'], $path)) return true;
+        return false;
+    }
+
     public function targetPath(string $name): ?string
     {
         $prefix = $this->namespaceRoot . '\\';

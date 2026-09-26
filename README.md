@@ -1,6 +1,6 @@
 # Mago Architecture Graph
 
-**Beta: 0.1.0-beta.2.** This release checks explicit path-aware module
+**Beta: 0.1.0-beta.3.** This release checks explicit path-aware module
 boundaries and adds a narrow, deterministic static-call graph. Keep existing
 graph gates until its evidence has been compared on the same project.
 
@@ -11,7 +11,8 @@ case where the actual source path and parsed namespace must jointly select a
 module, where module families isolate path instances, or where another layer
 may import only a public entrypoint.
 
-The boundary rule examines literal class `use` imports. It does not infer method
+The boundary rule examines literal class `use` imports through Mago's targeted
+syntax hooks. It does not infer method
 calls, resolve dynamic service names, or prove that a class exists at a mapped
 PSR-4 path. Mago's Analyzer and Guard retain their own diagnostics. Parse errors
 produce no guessed architecture edges.
@@ -51,7 +52,9 @@ Run `composer install` and `sh tests/smoke.sh` to exercise positive and negative
 paths through a real Mago 1.50 Analyzer worker. The smoke corpus is fictional.
 
 The optional `scope_graph` policy builds shortest paths from explicit static
-method calls in the complete configured Mago source set. A scope requires both
+method calls in the complete configured Mago source set. It indexes scope files
+first, then loads only files reached through Mago's method metadata. It does not
+reparse every file in the project. A scope requires both
 its repository path prefix and namespace prefix. Listed method permissions
 produce native Mago error or note findings with a bounded `graph-evidence` JSON
 note containing the path, policy ID, target declaration and completeness flag.
@@ -66,3 +69,10 @@ aliases, runtime dispatch or recursive call termination. Those gaps prevent it f
 replacing Argus's existing reachability gate or its verified-graph repair
 evidence. Use Mago Guard for standard dependencies and keep the Argus graph gate
 enabled while parity is developed.
+
+The extension was exercised against synthetic 20,001-file projects under a
+four-CPU, 4 GiB container limit. Those fixtures are small and regular; results
+do not establish a runtime or memory bound for a large Symfony monolith. Measure
+the complete `mago analyze` command on a representative project before relying
+on it in CI. Keep source discovery and Mago's own analysis costs separate from
+extension overhead when comparing runs.

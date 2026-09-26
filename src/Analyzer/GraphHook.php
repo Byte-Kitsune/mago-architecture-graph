@@ -29,23 +29,28 @@ final class GraphHook implements AfterAnalysisHook
         if ($graph === null || !$graph->enabled) return;
         $parser = (new ParserFactory())->createForNewestSupportedVersion();
         $finder = new NodeFinder();
+        $files = [];
+        foreach ($context->analysis->files as $file) {
+            if (!str_ends_with($file->file, '.php')) continue;
+            $path = $this->policy->relativePath($file->file);
+            if ($path !== null && str_starts_with($path, $graph->sourceRoot . '/') && !$graph->excluded($path)) $files[$path] = $file;
+        }
+        ksort($files);
         $nodes = [];
+        $indexed = [];
         $duplicates = [];
         $unresolved = [];
-        $files = $context->analysis->files;
-        usort($files, static fn ($a, $b) => strcmp($a->file, $b->file));
-        foreach ($files as $file) {
+        $indexFile = function (string $path) use (&$nodes, &$indexed, &$duplicates, &$unresolved, $files, $context, $parser, $finder): void {
+            if (isset($indexed[$path])) return;
+            $indexed[$path] = true;
             $context->cancellation->throwIfCancelled();
-            if (!str_ends_with($file->file, '.php')) continue;
-            $source = $file->getSourceFile();
-            $path = $this->policy->relativePath($source->path);
-            if ($path === null || !str_starts_with($path, $graph->sourceRoot . '/') || $graph->excluded($path)) continue;
+            $source = $files[$path]->getSourceFile();
             try {
                 $statements = $parser->parse($source->contents);
                 $statements = (new NodeTraverser(new NameResolver()))->traverse($statements ?? []);
             } catch (\Throwable) {
-                $unresolved[] = [$source->path, 0, 1, 'PHP parse failed; graph coverage is incomplete'];
-                continue;
+                $unresolved[] = [$source->path, 0, 'PHP parse failed; graph coverage is incomplete'];
+                return;
             }
             foreach ($finder->findInstanceOf($statements, Node\Stmt\Class_::class) as $class) {
                 if (!$class->namespacedName instanceof Node\Name) continue;
@@ -54,61 +59,89 @@ final class GraphHook implements AfterAnalysisHook
                     $symbol = $className . '::' . $method->name->toString();
                     $key = strtolower($symbol);
                     if (isset($nodes[$key]) || isset($duplicates[$key])) {
-                        $unresolved[] = [$source->path, $method->getStartFilePos(), $method->getStartLine(), "Duplicate method symbol {$symbol}"];
+                        $unresolved[] = [$source->path, $method->getStartFilePos(), "Duplicate method symbol {$symbol}"];
                         unset($nodes[$key]);
                         $duplicates[$key] = true;
                         continue;
                     }
                     $calls = [];
+                    $methodUnresolved = [];
                     foreach ($finder->findInstanceOf($method->stmts ?? [], Node\Expr\StaticCall::class) as $call) {
                         if (!$call->class instanceof Node\Name || !$call->name instanceof Node\Identifier || in_array(strtolower($call->class->toString()), ['self', 'static', 'parent'], true)) {
-                            $unresolved[] = [$source->path, $call->getStartFilePos(), $call->getStartLine(), "Dynamic or relative static call in {$symbol}"];
+                            $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Dynamic or relative static call in {$symbol}"];
                             continue;
                         }
                         $target = ($call->class->getAttribute('resolvedName') ?? $call->class)->toString() . '::' . $call->name->toString();
                         $calls[] = ['from' => $symbol, 'to' => $target, 'path' => $path, 'file' => $source->path, 'line' => $call->getStartLine(), 'column' => self::column($source->contents, $call->getStartFilePos()), 'position' => $call->getStartFilePos(), 'end' => $call->getEndFilePos() + 1, 'evidence' => 'explicit static call'];
                     }
-                    $nodes[$key] = ['symbol' => $symbol, 'class' => $className, 'path' => $path, 'file' => $source->path, 'line' => $method->getStartLine(), 'position' => $method->getStartFilePos(), 'calls' => $calls];
+                    $nodes[$key] = ['symbol' => $symbol, 'class' => $className, 'path' => $path, 'file' => $source->path, 'line' => $method->getStartLine(), 'position' => $method->getStartFilePos(), 'calls' => $calls, 'unresolved' => $methodUnresolved];
                 }
             }
-        }
-        ksort($nodes);
-        $edges = [];
+        };
+        foreach (array_keys($files) as $path) if ($graph->possibleScopePath($path)) $indexFile($path);
+        $starts = [];
         foreach ($nodes as $key => $node) {
-            foreach ($node['calls'] as $call) {
-                $target = strtolower($call['to']);
-                if (isset($nodes[$target])) $edges[$key][] = $call;
-                elseif ($graph->withinRoot(explode('::', $call['to'], 2)[0])) $unresolved[] = [$call['file'], $call['position'], $call['line'], 'Static target absent from the complete Mago source set: ' . $call['to']];
-            }
-            $edges[$key] ??= [];
-            usort($edges[$key], static fn ($a, $b) => [$a['to'], $a['path'], $a['line'], $a['column']] <=> [$b['to'], $b['path'], $b['line'], $b['column']]);
+            $scope = $graph->scopeFor($node['path'], $node['class']);
+            if ($scope !== null) $starts[$key] = $scope['id'];
         }
+        ksort($starts);
+        $edges = [];
+        $outgoing = function (string $key) use (&$edges, &$nodes, &$unresolved, $graph, $context, $files, $indexFile): array {
+            if (isset($edges[$key])) return $edges[$key];
+            foreach ($nodes[$key]['unresolved'] as $issue) $unresolved[] = $issue;
+            $calls = array_values(array_filter($nodes[$key]['calls'], static fn ($call) => $graph->withinRoot(explode('::', $call['to'], 2)[0])));
+            if ($calls === []) return $edges[$key] = [];
+            $members = array_map(static function ($call) {
+                [$class, $method] = explode('::', $call['to'], 2);
+                return new \Mago\Sdk\Analyzer\Metadata\MemberIdentifier($class, $method);
+            }, $calls);
+            $metadata = $context->codebase->getMultipleMethods($members);
+            $result = [];
+            foreach ($calls as $index => $call) {
+                $target = strtolower($call['to']);
+                $location = $metadata[$index]?->location->file ?? null;
+                $path = is_string($location) ? $this->policy->relativePath($location) : null;
+                if ($path === null || !isset($files[$path])) {
+                    $unresolved[] = [$call['file'], $call['position'], 'Static target absent from the complete Mago source set: ' . $call['to']];
+                    continue;
+                }
+                $indexFile($path);
+                if (!isset($nodes[$target])) {
+                    $unresolved[] = [$call['file'], $call['position'], 'Static target declaration was not uniquely indexed: ' . $call['to']];
+                    continue;
+                }
+                $result[] = $call;
+            }
+            usort($result, static fn ($a, $b) => [$a['to'], $a['path'], $a['line'], $a['column']] <=> [$b['to'], $b['path'], $b['line'], $b['column']]);
+            return $edges[$key] = $result;
+        };
         $proofs = [];
         $depthWarnings = [];
-        foreach ($nodes as $startKey => $start) {
-            $scope = $graph->scopeFor($start['path'], $start['class']);
-            if ($scope === null) continue;
+        foreach ($starts as $startKey => $scopeId) {
+            $start = $nodes[$startKey];
             $queue = [[$startKey, []]];
             $seen = [$startKey => true];
             for ($index = 0; $index < count($queue); $index++) {
                 $context->cancellation->throwIfCancelled();
                 [$current, $proof] = $queue[$index];
                 if ($proof !== []) {
-                    $permission = $graph->permission($scope['id'], $nodes[$current]['symbol']);
+                    $permission = $graph->permission($scopeId, $nodes[$current]['symbol']);
                     if ($permission !== null) {
-                        $proofs[] = [$scope['id'], $permission, $proof, $nodes[$current]];
+                        $proofs[] = [$scopeId, $permission, $proof, $nodes[$current]];
                         if ($permission['decision'] === 'deny') continue;
                     }
                 }
                 $limit = $graph->mode === 'direct' ? 1 : $graph->maxDepth;
                 if (count($proof) >= $limit) {
-                    foreach ($graph->mode === 'transitive' ? ($edges[$current] ?? []) : [] as $edge) if (!isset($seen[strtolower($edge['to'])])) {
-                        $depthWarnings[$scope['id'] . ':' . $startKey] = [$start['file'], $start['position'], $start['line'], 'Configured graph depth was reached before traversal completed'];
-                        break;
+                    if ($graph->mode === 'transitive') foreach ($nodes[$current]['calls'] as $call) {
+                        if ($graph->withinRoot(explode('::', $call['to'], 2)[0]) && !isset($seen[strtolower($call['to'])])) {
+                            $depthWarnings[$scopeId . ':' . $startKey] = [$start['file'], $start['position'], 'Configured graph depth was reached before traversal completed'];
+                            break;
+                        }
                     }
                     continue;
                 }
-                foreach ($edges[$current] ?? [] as $edge) {
+                foreach ($outgoing($current) as $edge) {
                     $target = strtolower($edge['to']);
                     if (isset($seen[$target])) continue;
                     $seen[$target] = true;
@@ -116,7 +149,7 @@ final class GraphHook implements AfterAnalysisHook
                 }
             }
         }
-        foreach ([...$unresolved, ...array_values($depthWarnings)] as [$file, $position, $line, $reason]) $this->report($context, Level::Error, 'scope-graph-incomplete', 'Static-call graph coverage is incomplete: ' . $reason, $file, $position, $position + 1);
+        foreach ([...$unresolved, ...array_values($depthWarnings)] as [$file, $position, $reason]) $this->report($context, Level::Error, 'scope-graph-incomplete', 'Static-call graph coverage is incomplete: ' . $reason, $file, $position, $position + 1);
         $complete = $unresolved === [] && $depthWarnings === [];
         foreach ($proofs as [$scope, $permission, $proof, $target]) $this->reportProof($context, $scope, $permission, $proof, $target, $complete);
     }

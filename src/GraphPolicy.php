@@ -54,6 +54,12 @@ final class GraphPolicy
         return false;
     }
 
+    public function possibleScopePath(string $path): bool
+    {
+        foreach ($this->scopes as $scope) if (str_starts_with($path, $scope['path_prefix'])) return true;
+        return false;
+    }
+
     /** @return array{id: string, path_prefix: string, namespace_prefix: string}|null */
     public function scopeFor(string $path, string $class): ?array
     {
