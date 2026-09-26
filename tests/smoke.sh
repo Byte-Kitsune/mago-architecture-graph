@@ -104,6 +104,48 @@ $proofs=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code
 if (count($incomplete)!==1 || $proofs!==[] || !str_contains($incomplete[0]["message"],"Unresolved instance receiver")) throw new RuntimeException("Mutable constructor property was treated as a proof.");
 echo "Mutable property corpus passed\n";
 ' "$report"
+cd ../dispatch-corpus
+set +e
+../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+status=$?
+set -e
+[ "$status" -eq 1 ]
+php -r '
+$issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
+$denied=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code"],"scope-forbidden-entrypoint-method")));
+$incomplete=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code"],"scope-graph-incomplete")));
+if (count($denied)!==6 || count($incomplete)!==7) throw new RuntimeException("Expanded dispatch classification changed.");
+$reasons=implode(" ",array_column($incomplete,"message"));
+foreach (["Nested or indirect dispatch", "Dynamic function", "Dynamic or relative construction", "Named function", "not a static method", "Unresolved instance receiver", "Unproven callback invocation"] as $reason) if (!str_contains($reasons,$reason)) throw new RuntimeException("Missing dispatch gap: ".$reason);
+$edges=[];
+foreach ($denied as $issue) {
+    $proof=json_decode(substr($issue["notes"][0],strlen("graph-evidence: ")),true,512,JSON_THROW_ON_ERROR);
+    if (($proof["complete"]??null)!==false) throw new RuntimeException("Unsafe dispatch certified a complete proof.");
+    foreach ($proof["edges"] as $edge) $edges[]=$edge["evidence"];
+}
+foreach (["non-overridable this method", "literal instance callback", "literal static callback"] as $evidence) if (!str_contains(implode(" ",$edges),$evidence)) throw new RuntimeException("Missing proven dispatch: ".$evidence);
+echo "Expanded dispatch corpus passed\n";
+' "$report"
+set +e
+ARCHITECTURE_COMPLETE=1 ../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+status=$?
+set -e
+[ "$status" -eq 1 ]
+php -r '
+$issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
+$denied=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code"],"scope-forbidden-entrypoint-method")));
+$incomplete=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code"],"scope-graph-incomplete")));
+if (count($denied)!==7 || $incomplete!==[]) throw new RuntimeException("Complete readonly dispatch corpus is not complete.");
+$edges=[];
+foreach ($denied as $issue) {
+    $proof=json_decode(substr($issue["notes"][0],strlen("graph-evidence: ")),true,512,JSON_THROW_ON_ERROR);
+    if (($proof["complete"]??null)!==true) throw new RuntimeException("Proven readonly dispatch was marked incomplete.");
+    foreach ($proof["edges"] as $edge) $edges[]=$edge["evidence"];
+    if (str_contains(json_encode($proof,JSON_THROW_ON_ERROR),"inheritedConstruction") && ($proof["edges"][0]["to"]??null)!=="App\\BaseConstruction::__construct") throw new RuntimeException("Inherited constructor was not resolved to its declaration.");
+}
+if (!in_array("literal constructor call",$edges,true)) throw new RuntimeException("Constructor call was not included in the graph.");
+echo "Complete readonly dispatch corpus passed\n";
+' "$report"
 cd ../duplicate-corpus
 set +e
 ../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"

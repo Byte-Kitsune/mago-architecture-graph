@@ -31,7 +31,7 @@ final class ArchitectureGraphExtension
         return new Extension(
             identifier: 'byte-kitsune/architecture-graph',
             name: 'Path-aware architecture graph',
-            version: '0.1.0-beta.7',
+            version: '0.1.0-beta.8',
             analyzerPlugins: [new ArchitecturePlugin(new Policy($projectRoot, $policyPath), $typeBindings, $serviceConfigurationComplete)],
         );
     }
