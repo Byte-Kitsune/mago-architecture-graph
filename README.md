@@ -1,6 +1,6 @@
 # Mago Architecture Graph
 
-**Beta: 0.1.0-beta.5.** This release checks explicit path-aware module
+**Beta: 0.1.0-beta.6.** This release checks explicit path-aware module
 boundaries and adds a narrow, deterministic call graph. Keep existing
 graph gates until its evidence has been compared on the same project.
 
@@ -85,7 +85,8 @@ This proves termination of that narrow shape, not its query cost. Mutual cycles,
 other break conditions and dynamic dispatch remain hard errors or incomplete
 coverage. A denied method does not end traversal, so a cycle behind a denial
 remains visible. Detection uses an iterative graph walk, so long chains do not consume
-the PHP call stack.
+the PHP call stack. Each cycle is reported once per scope, even when several
+entry methods reach it.
 
 Regular property assignments, mutable service receivers, non-final receiver
 classes, container lookups, decorators, runtime dispatch and indirect callbacks
