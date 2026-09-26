@@ -3,14 +3,17 @@
 namespace App;
 
 use function App\Sub\aliasTarget as importedTarget;
+use Psr\Container\ContainerInterface;
 
 class CompleteEntry
 {
     private readonly Port $port;
+    private readonly ContainerInterface $container;
 
-    public function __construct(Port $port)
+    public function __construct(Port $port, ContainerInterface $container)
     {
         $this->port = $port;
+        $this->container = $container;
     }
 
     public function run(string $text): void
@@ -62,5 +65,20 @@ class CompleteEntry
     public function functionConstruction(): void
     {
         constructGateway();
+    }
+
+    public function serviceById(): void
+    {
+        $this->container->get('gateway.service')->expensive();
+    }
+
+    public function serviceByAlias(): void
+    {
+        $this->container->get('gateway.alias')->expensive();
+    }
+
+    public function serviceByClass(): void
+    {
+        $this->container->get(Gateway::class)->expensive();
     }
 }

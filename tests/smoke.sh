@@ -114,9 +114,9 @@ php -r '
 $issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
 $denied=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code"],"scope-forbidden-entrypoint-method")));
 $incomplete=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code"],"scope-graph-incomplete")));
-if (count($denied)!==8 || count($incomplete)!==7) throw new RuntimeException("Expanded dispatch classification changed.");
+if (count($denied)!==8 || count($incomplete)!==10) throw new RuntimeException("Expanded dispatch classification changed.");
 $reasons=implode(" ",array_column($incomplete,"message"));
-foreach (["Nested or indirect dispatch", "Dynamic function", "Dynamic or relative construction", "not a static method", "Unresolved instance receiver", "Unproven callback invocation", "function:App\\dynamicHelper"] as $reason) if (!str_contains($reasons,$reason)) throw new RuntimeException("Missing dispatch gap: ".$reason);
+foreach (["Nested or indirect dispatch", "Dynamic function", "Dynamic or relative construction", "not a static method", "Unresolved instance receiver", "Unproven callback invocation", "function:App\\dynamicHelper", "Unproven Symfony container lookup", "Symfony container lookup result escapes immediate call"] as $reason) if (!str_contains($reasons,$reason)) throw new RuntimeException("Missing dispatch gap: ".$reason);
 $edges=[];
 foreach ($denied as $issue) {
     $proof=json_decode(substr($issue["notes"][0],strlen("graph-evidence: ")),true,512,JSON_THROW_ON_ERROR);
@@ -142,7 +142,7 @@ php -r '
 $issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
 $denied=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code"],"scope-forbidden-entrypoint-method")));
 $incomplete=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code"],"scope-graph-incomplete")));
-if (count($denied)!==10 || $incomplete!==[]) throw new RuntimeException("Complete readonly dispatch corpus is not complete.");
+if (count($denied)!==13 || $incomplete!==[]) throw new RuntimeException("Complete readonly dispatch corpus is not complete.");
 $edges=[];
 foreach ($denied as $issue) {
     $proof=json_decode(substr($issue["notes"][0],strlen("graph-evidence: ")),true,512,JSON_THROW_ON_ERROR);
@@ -152,7 +152,23 @@ foreach ($denied as $issue) {
 }
 if (!in_array("literal constructor call",$edges,true)) throw new RuntimeException("Constructor call was not included in the graph.");
 if (count(array_filter($edges,fn($edge)=>$edge==="project function call"))<3) throw new RuntimeException("Complete project function paths were not included.");
+foreach (["gateway.service", "gateway.alias", "App\\Gateway"] as $id) if (!str_contains(implode(" ",$edges),"Symfony literal service ID ".$id." -> App\\Gateway")) throw new RuntimeException("Literal container lookup was not proven: ".$id);
 echo "Complete readonly dispatch corpus passed\n";
+' "$report"
+set +e
+ARCHITECTURE_COMPLETE=1 ARCHITECTURE_SERVICE_INCOMPLETE=1 ../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+status=$?
+set -e
+[ "$status" -eq 1 ]
+php -r '
+$issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
+$incomplete=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code"],"scope-graph-incomplete")));
+if (count(array_filter($incomplete,fn($issue)=>str_contains($issue["message"],"Unproven Symfony container lookup")))!==3) throw new RuntimeException("Incomplete service config still supplied container proofs.");
+foreach ($issues as $issue) if (str_ends_with($issue["code"],"scope-forbidden-entrypoint-method")) {
+    $proof=json_decode(substr($issue["notes"][0],strlen("graph-evidence: ")),true,512,JSON_THROW_ON_ERROR);
+    if (($proof["complete"]??null)!==false) throw new RuntimeException("Incomplete service config certified a proof.");
+}
+echo "Incomplete container configuration corpus passed\n";
 ' "$report"
 cd ../duplicate-corpus
 set +e

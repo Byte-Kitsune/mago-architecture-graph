@@ -3,14 +3,17 @@
 namespace App;
 
 use function App\Sub\aliasTarget as importedTarget;
+use Psr\Container\ContainerInterface;
 
 class Entry
 {
     private readonly Port $port;
+    private readonly ContainerInterface $container;
 
-    public function __construct(Port $port)
+    public function __construct(Port $port, ContainerInterface $container)
     {
         $this->port = $port;
+        $this->container = $container;
     }
 
     public function run(): void
@@ -66,6 +69,21 @@ class Entry
     public function dynamicFunctionBody(): void
     {
         dynamicHelper();
+    }
+
+    public function unknownService(): void
+    {
+        $this->container->get('unknown.service')->expensive();
+    }
+
+    public function dynamicService(string $id): void
+    {
+        $this->container->get($id)->expensive();
+    }
+
+    public function escapedService(): object
+    {
+        return $this->container->get('gateway.service');
     }
 
     public function dynamicConstruction(string $name): void
