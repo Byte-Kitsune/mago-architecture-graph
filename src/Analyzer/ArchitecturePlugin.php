@@ -20,7 +20,7 @@ final class ArchitecturePlugin implements Plugin
 
     public function register(PluginRegistry $registry): void
     {
-        $registry->registerAfterAnalysisHook(new BoundaryHook($this->policy));
+        $registry->registerNodeAnalysisHook(new BoundaryHook($this->policy));
         if ($this->policy->graph?->enabled) $registry->registerAfterAnalysisHook(new GraphHook($this->policy));
     }
 }

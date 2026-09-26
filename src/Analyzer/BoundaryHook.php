@@ -5,55 +5,80 @@ declare(strict_types=1);
 namespace ByteKitsune\MagoArchitectureGraph\Analyzer;
 
 use ByteKitsune\MagoArchitectureGraph\Policy;
-use Mago\Sdk\Analyzer\AfterAnalysisContext;
-use Mago\Sdk\Analyzer\AfterAnalysisHook;
+use Mago\Sdk\Analyzer\NodeAnalysisContext;
+use Mago\Sdk\Analyzer\NodeAnalysisHook;
 use Mago\Sdk\Reporting\Issue;
 use Mago\Sdk\Reporting\Level;
 use Mago\Sdk\SourceLocation;
-use Mago\Sdk\Span;
-use PhpParser\Node;
-use PhpParser\ParserFactory;
+use Mago\Sdk\Syntax\Node;
+use Mago\Sdk\Syntax\NodeKind;
+use Mago\Sdk\Syntax\SourceFile;
 
-/** Reports only literal class imports under an explicit path-and-namespace policy. */
-final class BoundaryHook implements AfterAnalysisHook
+/** Reports literal class imports using Mago's already-parsed syntax snapshot. */
+final class BoundaryHook implements NodeAnalysisHook
 {
-    public function __construct(private readonly Policy $policy) {}
+    /** @var \WeakMap<\Mago\Sdk\Analyzer\FileAnalysis, array<string, Node>> */
+    private readonly \WeakMap $itemsByAnalysis;
 
-    public function afterAnalysis(AfterAnalysisContext $context): void
+    public function __construct(private readonly Policy $policy)
     {
-        $parser = (new ParserFactory())->createForNewestSupportedVersion();
-        foreach ($context->analysis->files as $file) {
-            $context->cancellation->throwIfCancelled();
-            if (!str_ends_with($file->file, '.php')) continue;
-            $source = $file->getSourceFile();
-            $relative = $this->policy->relativePath($source->path);
-            if ($relative === null) continue;
-            try {
-                $statements = $parser->parse($source->contents);
-            } catch (\Throwable) {
-                continue; // Mago reports invalid PHP; never infer edges from a partial parse.
+        $this->itemsByAnalysis = new \WeakMap();
+    }
+
+    public function getTargets(): array
+    {
+        return [NodeKind::UseItem];
+    }
+
+    public function getRequirements(): array
+    {
+        return [];
+    }
+
+    public function analyze(NodeAnalysisContext $context): void
+    {
+        $relative = $this->policy->relativePath($context->source->path);
+        if ($relative === null || !$this->policy->possibleModulePath($relative)) return;
+        $source = $context->analysis->getSourceFile();
+        if (!isset($this->itemsByAnalysis[$context->analysis])) {
+            $items = [];
+            foreach ($source->getNodes(NodeKind::UseItem) as $candidate) {
+                $items[$candidate->span->start . ':' . $candidate->span->end] = $candidate;
             }
-            foreach ($statements ?? [] as $statement) {
-                if (!$statement instanceof Node\Stmt\Namespace_) continue;
-                $namespace = $statement->name?->toString() ?? '';
-                $module = $this->policy->classify($relative, $namespace);
-                if ($module === null) continue;
-                foreach ($statement->stmts as $part) {
-                    if ($part instanceof Node\Stmt\Use_ && $part->type === Node\Stmt\Use_::TYPE_NORMAL) {
-                        foreach ($part->uses as $item) $this->check($context, $source->path, $relative, $module, $item->name->toString(), $item);
-                    } elseif ($part instanceof Node\Stmt\GroupUse && $part->type === Node\Stmt\Use_::TYPE_NORMAL) {
-                        foreach ($part->uses as $item) {
-                            if ($item->type !== Node\Stmt\Use_::TYPE_UNKNOWN && $item->type !== Node\Stmt\Use_::TYPE_NORMAL) continue;
-                            $this->check($context, $source->path, $relative, $module, $part->prefix->toString() . '\\' . $item->name->toString(), $item);
-                        }
-                    }
-                }
-            }
+            $this->itemsByAnalysis[$context->analysis] = $items;
         }
+        $item = $this->itemsByAnalysis[$context->analysis][$context->node->span->start . ':' . $context->node->span->end] ?? null;
+        if ($item === null) throw new \LogicException('Mago targeted import does not match the full analyzed syntax snapshot.');
+        if ($this->isTypedImport($source, $item)) return;
+        $namespace = $this->namespaceFor($source, $item);
+        $module = $this->policy->classify($relative, $namespace);
+        if ($module === null) return;
+        $target = $source->getResolvedName($item)?->name;
+        if ($target === null) throw new \LogicException('Mago could not resolve a class import in the full analyzed syntax snapshot.');
+        $this->check($context, $source->path, $relative, $module, $target, $item);
+    }
+
+    private function isTypedImport(SourceFile $source, Node $item): bool
+    {
+        $parent = $source->getParent($item);
+        if ($parent === null) return true;
+        return $source->getFirstDescendant($parent, NodeKind::UseType) !== null;
+    }
+
+    private function namespaceFor(SourceFile $source, Node $item): string
+    {
+        foreach ($source->getAncestors($item) as $ancestor) {
+            if ($ancestor->kind !== NodeKind::Namespace) continue;
+            foreach ($source->getChildren($ancestor) as $child) {
+                if ($child->kind === NodeKind::Identifier) return $source->getResolvedName($child)?->name ?? $source->getText($child);
+            }
+            return '';
+        }
+        return '';
     }
 
     /** @param array<string, mixed> $sourceModule */
-    private function check(AfterAnalysisContext $context, string $file, string $path, array $sourceModule, string $target, Node $item): void
+    private function check(NodeAnalysisContext $context, string $file, string $path, array $sourceModule, string $target, Node $item): void
     {
         $targetPath = $this->policy->targetPath($target);
         if ($targetPath === null) return;
@@ -64,7 +89,7 @@ final class BoundaryHook implements AfterAnalysisHook
         if ($code === null) return;
         $issue = Issue::at(
             sprintf('Import of %s crosses the configured %s boundary (%s -> %s).', $target, $code, $sourceModule['id'], $targetModule['id']),
-            new SourceLocation($file, new Span($item->getStartFilePos(), $item->getEndFilePos() + 1)),
+            new SourceLocation($file, $item->span),
         )->withNote('Path and namespace were both matched; imports do not prove method calls or runtime dispatch.');
         $context->report(Level::Error, $code, $issue);
     }
