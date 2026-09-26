@@ -82,7 +82,7 @@ set -e
 php -r '
 $issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
 $codes=array_column($issues,"code");
-foreach (["recursive-cycle"=>2,"bounded-recursion"=>1,"scope-allowed-entrypoint-method"=>4,"scope-forbidden-entrypoint-method"=>2] as $suffix=>$expected) {
+foreach (["recursive-cycle"=>3,"bounded-recursion"=>1,"scope-allowed-entrypoint-method"=>4,"scope-forbidden-entrypoint-method"=>2] as $suffix=>$expected) {
     if (count(array_filter($codes,fn($code)=>$code==="byte-kitsune/architecture-graph/".$suffix))!==$expected) throw new RuntimeException("Wrong recursion classification: ".$suffix);
 }
 foreach ($issues as $issue) if ($issue["code"]==="byte-kitsune/architecture-graph/scope-allowed-entrypoint-method") {
@@ -114,9 +114,9 @@ php -r '
 $issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
 $denied=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code"],"scope-forbidden-entrypoint-method")));
 $incomplete=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code"],"scope-graph-incomplete")));
-if (count($denied)!==6 || count($incomplete)!==7) throw new RuntimeException("Expanded dispatch classification changed.");
+if (count($denied)!==8 || count($incomplete)!==7) throw new RuntimeException("Expanded dispatch classification changed.");
 $reasons=implode(" ",array_column($incomplete,"message"));
-foreach (["Nested or indirect dispatch", "Dynamic function", "Dynamic or relative construction", "Named function", "not a static method", "Unresolved instance receiver", "Unproven callback invocation"] as $reason) if (!str_contains($reasons,$reason)) throw new RuntimeException("Missing dispatch gap: ".$reason);
+foreach (["Nested or indirect dispatch", "Dynamic function", "Dynamic or relative construction", "not a static method", "Unresolved instance receiver", "Unproven callback invocation", "function:App\\dynamicHelper"] as $reason) if (!str_contains($reasons,$reason)) throw new RuntimeException("Missing dispatch gap: ".$reason);
 $edges=[];
 foreach ($denied as $issue) {
     $proof=json_decode(substr($issue["notes"][0],strlen("graph-evidence: ")),true,512,JSON_THROW_ON_ERROR);
@@ -124,6 +124,13 @@ foreach ($denied as $issue) {
     foreach ($proof["edges"] as $edge) $edges[]=$edge["evidence"];
 }
 foreach (["non-overridable this method", "literal instance callback", "literal static callback"] as $evidence) if (!str_contains(implode(" ",$edges),$evidence)) throw new RuntimeException("Missing proven dispatch: ".$evidence);
+if (!in_array("project function call",$edges,true)) throw new RuntimeException("Project function edge was not included.");
+$functionProofs=array_values(array_filter($denied,fn($issue)=>str_contains($issue["notes"][0]??"","App\\\\Entry::namedFunction")));
+if (count($functionProofs)!==1) throw new RuntimeException("Project function chain was not reached.");
+$functionProof=json_decode(substr($functionProofs[0]["notes"][0],strlen("graph-evidence: ")),true,512,JSON_THROW_ON_ERROR);
+if (count($functionProof["edges"]??[])!==3) throw new RuntimeException("Project function chain was truncated.");
+$importProofs=array_values(array_filter($denied,fn($issue)=>str_contains($issue["notes"][0]??"","App\\\\Entry::importedFunction")));
+if (count($importProofs)!==1) throw new RuntimeException("Imported function alias was not reached.");
 echo "Expanded dispatch corpus passed\n";
 ' "$report"
 set +e
@@ -135,7 +142,7 @@ php -r '
 $issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
 $denied=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code"],"scope-forbidden-entrypoint-method")));
 $incomplete=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code"],"scope-graph-incomplete")));
-if (count($denied)!==7 || $incomplete!==[]) throw new RuntimeException("Complete readonly dispatch corpus is not complete.");
+if (count($denied)!==10 || $incomplete!==[]) throw new RuntimeException("Complete readonly dispatch corpus is not complete.");
 $edges=[];
 foreach ($denied as $issue) {
     $proof=json_decode(substr($issue["notes"][0],strlen("graph-evidence: ")),true,512,JSON_THROW_ON_ERROR);
@@ -144,6 +151,7 @@ foreach ($denied as $issue) {
     if (str_contains(json_encode($proof,JSON_THROW_ON_ERROR),"inheritedConstruction") && ($proof["edges"][0]["to"]??null)!=="App\\BaseConstruction::__construct") throw new RuntimeException("Inherited constructor was not resolved to its declaration.");
 }
 if (!in_array("literal constructor call",$edges,true)) throw new RuntimeException("Constructor call was not included in the graph.");
+if (count(array_filter($edges,fn($edge)=>$edge==="project function call"))<3) throw new RuntimeException("Complete project function paths were not included.");
 echo "Complete readonly dispatch corpus passed\n";
 ' "$report"
 cd ../duplicate-corpus
@@ -156,7 +164,8 @@ php -r '
 $issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
 $denied=array_values(array_filter($issues,fn($issue)=>$issue["code"]==="byte-kitsune/architecture-graph/scope-forbidden-entrypoint-method"));
 $incomplete=array_values(array_filter($issues,fn($issue)=>$issue["code"]==="byte-kitsune/architecture-graph/scope-graph-incomplete"));
-if (count($denied)!==1 || $incomplete===[]) throw new RuntimeException("Duplicate stage did not fail closed.");
+if (count($denied)!==1 || count($incomplete)<2) throw new RuntimeException("Duplicate stage or function did not fail closed.");
+if (!str_contains(implode(" ",array_column($incomplete,"message")),"Duplicate or unresolved declaration App\\duplicateHelper")) throw new RuntimeException("Duplicate function was not reported.");
 $proof=json_decode(substr($denied[0]["notes"][0],strlen("graph-evidence: ")),true,512,JSON_THROW_ON_ERROR);
 if (($proof["complete"]??null)!==false || count($proof["edges"]??[])!==1) throw new RuntimeException("Duplicate stage certified a graph proof.");
 echo "Duplicate declaration corpus passed\n";

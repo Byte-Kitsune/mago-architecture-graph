@@ -2,6 +2,8 @@
 
 namespace App;
 
+use function App\Sub\aliasTarget as importedTarget;
+
 class Entry
 {
     private readonly Port $port;
@@ -53,7 +55,17 @@ class Entry
 
     public function namedFunction(): void
     {
-        hidden();
+        bridge();
+    }
+
+    public function importedFunction(): void
+    {
+        importedTarget();
+    }
+
+    public function dynamicFunctionBody(): void
+    {
+        dynamicHelper();
     }
 
     public function dynamicConstruction(string $name): void
