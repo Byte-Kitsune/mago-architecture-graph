@@ -130,7 +130,7 @@ final class GraphHook implements AfterAnalysisHook
                 $indexFile($path);
                 $alias = $aliasesByClass[strtolower($child->name)] ?? null;
                 if ($alias === false) $invalid = true;
-                elseif (is_string($alias) && strcasecmp($alias, $interface) === 0) $matches[] = $child->name;
+                elseif (is_string($alias) && strcasecmp($alias, $interface) === 0) $matches[] = $child->originalName;
             }
             return $resolvedAliases[$key] = !$invalid && count($matches) === 1 ? $matches[0] : null;
         };
