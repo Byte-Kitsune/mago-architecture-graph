@@ -81,4 +81,10 @@ class CompleteEntry
     {
         $this->container->get(Gateway::class)->expensive();
     }
+
+    public function serviceByLocal(): void
+    {
+        $service = $this->container->get('gateway.alias');
+        $service->expensive();
+    }
 }

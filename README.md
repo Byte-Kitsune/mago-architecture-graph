@@ -1,6 +1,6 @@
 # Mago Architecture Graph
 
-**Beta: 0.1.0-beta.10.** This release checks explicit path-aware module
+**Beta: 0.1.0-beta.11.** This release checks explicit path-aware module
 boundaries and adds a narrow, deterministic call graph. Keep existing
 graph gates until its evidence has been compared on the same project.
 
@@ -110,8 +110,10 @@ service class. Pass exact service ID-to-class bindings from
 `mago-symfony-wiring`'s `ServiceMap::serviceClassBindings()` as the fifth
 `create()` argument. Literal string IDs and `ClassName::class` IDs are supported.
 The trusted dev service map must be complete, the class must lie in the graph
-namespace root, and the returned object must be called immediately. Unknown
-or dynamic IDs, stored lookup results, mutable container properties and
+namespace root, and the returned object must be called immediately. A single
+local assignment followed by a zero-argument method call is also modeled when
+those are the method's only two statements; this proves no intervening write
+or escape. Unknown or dynamic IDs, other stored lookup results, mutable container properties and
 unsupported container types report incomplete coverage. This is evidence from
 literal service configuration, not proof of a compiled container or runtime
 decorators.

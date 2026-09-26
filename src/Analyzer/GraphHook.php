@@ -84,6 +84,13 @@ final class GraphHook implements AfterAnalysisHook
                         $calls[] = self::edge($symbol, $targetClass . '::' . $call->name->toString(), $path, $source->path, $source->contents, $call, 'explicit static call');
                     }
                     $consumedLookups = [];
+                    $localServiceCall = $this->singleUseContainerCall($method->stmts ?? [], $properties, $graph);
+                    if ($localServiceCall !== null) {
+                        [$lookup, $localCall, $targetClass, $id] = $localServiceCall;
+                        $consumedLookups[spl_object_id($lookup)] = true;
+                        $consumedLookups[spl_object_id($localCall)] = true;
+                        $calls[] = self::edge($symbol, $targetClass . '::' . $localCall->name->toString(), $path, $source->path, $source->contents, $localCall, 'Symfony single-use local service ID ' . $id . ' -> ' . $targetClass);
+                    }
                     foreach ($instanceCalls as $call) {
                         if (isset($consumedLookups[spl_object_id($call)])) continue;
                         if (!$call->name instanceof Node\Identifier) {
@@ -439,6 +446,27 @@ final class GraphHook implements AfterAnalysisHook
         if ($id === null || !isset($this->serviceClassBindings[$id])) return null;
         $class = $this->serviceClassBindings[$id];
         return $graph->withinRoot($class) ? [$class, $id] : null;
+    }
+
+    /**
+     * Only two exact statements prove the local cannot be reassigned, read before
+     * assignment, passed elsewhere, or retained beyond its single call.
+     *
+     * @param list<Node\Stmt> $statements
+     * @param array<string, array{string, string, string}> $properties
+     * @return array{Node\Expr\MethodCall, Node\Expr\MethodCall, string, string}|null
+     */
+    private function singleUseContainerCall(array $statements, array $properties, GraphPolicy $graph): ?array
+    {
+        if (count($statements) !== 2 || !$statements[0] instanceof Node\Stmt\Expression || !$statements[1] instanceof Node\Stmt\Expression) return null;
+        $assignment = $statements[0]->expr;
+        $call = $statements[1]->expr;
+        if (!$assignment instanceof Node\Expr\Assign || !$assignment->var instanceof Node\Expr\Variable || !is_string($assignment->var->name) || $assignment->var->name === 'this') return null;
+        if (!$assignment->expr instanceof Node\Expr\MethodCall || !self::isContainerGet($assignment->expr, $properties)) return null;
+        if (!$call instanceof Node\Expr\MethodCall || !$call->name instanceof Node\Identifier || $call->args !== []) return null;
+        if (!$call->var instanceof Node\Expr\Variable || $call->var->name !== $assignment->var->name) return null;
+        $target = $this->containerTarget($assignment->expr, $graph);
+        return $target === null ? null : [$assignment->expr, $call, $target[0], $target[1]];
     }
 
     /** @param array<string, array{string, string, string}> $properties @return array{string, string}|null */

@@ -86,6 +86,13 @@ class Entry
         return $this->container->get('gateway.service');
     }
 
+    public function reassignedService(): void
+    {
+        $service = $this->container->get('gateway.service');
+        $service = new Gateway();
+        $service->expensive();
+    }
+
     public function dynamicConstruction(string $name): void
     {
         new $name();
