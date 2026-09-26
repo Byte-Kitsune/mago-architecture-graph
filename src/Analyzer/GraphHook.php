@@ -21,8 +21,8 @@ use PhpParser\ParserFactory;
 /** Deterministic shortest paths through literal calls and proven service bindings. */
 final class GraphHook implements AfterAnalysisHook
 {
-    /** @param array<string, string> $classBindings */
-    public function __construct(private readonly Policy $policy, private readonly array $classBindings = [], private readonly bool $serviceConfigurationComplete = true, private readonly ?DeclarationIndex $declarations = null) {}
+    /** @param array<string, string> $classBindings @param array<string, string> $serviceClassBindings */
+    public function __construct(private readonly Policy $policy, private readonly array $classBindings = [], private readonly bool $serviceConfigurationComplete = true, private readonly ?DeclarationIndex $declarations = null, private readonly array $serviceClassBindings = []) {}
 
     public function afterAnalysis(AfterAnalysisContext $context): void
     {
@@ -83,9 +83,27 @@ final class GraphHook implements AfterAnalysisHook
                         $targetClass = strtolower($call->class->toString()) === 'self' ? $className : ($call->class->getAttribute('resolvedName') ?? $call->class)->toString();
                         $calls[] = self::edge($symbol, $targetClass . '::' . $call->name->toString(), $path, $source->path, $source->contents, $call, 'explicit static call');
                     }
+                    $consumedLookups = [];
                     foreach ($instanceCalls as $call) {
+                        if (isset($consumedLookups[spl_object_id($call)])) continue;
                         if (!$call->name instanceof Node\Identifier) {
                             $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Dynamic instance method call in {$symbol}"];
+                            continue;
+                        }
+                        if ($call->var instanceof Node\Expr\MethodCall && self::isContainerGet($call->var, $properties)) {
+                            $lookup = $call->var;
+                            $consumedLookups[spl_object_id($lookup)] = true;
+                            $target = $this->containerTarget($lookup, $graph);
+                            if ($target === null) {
+                                $methodUnresolved[] = [$source->path, $lookup->getStartFilePos(), "Unproven Symfony container lookup in {$symbol}"];
+                                continue;
+                            }
+                            [$targetClass, $id] = $target;
+                            $calls[] = self::edge($symbol, $targetClass . '::' . $call->name->toString(), $path, $source->path, $source->contents, $call, 'Symfony literal service ID ' . $id . ' -> ' . $targetClass);
+                            continue;
+                        }
+                        if (self::isContainerGet($call, $properties)) {
+                            $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Symfony container lookup result escapes immediate call in {$symbol}"];
                             continue;
                         }
                         $binding = self::receiverBinding($call->var, $call->name->toString(), $class, $className, $properties);
@@ -396,7 +414,34 @@ final class GraphHook implements AfterAnalysisHook
         $context->report($level, $code, Issue::at($message, new SourceLocation($file, new Span($start, $end))));
     }
 
-    /** @param array<string, array{string, string}> $properties @return array{string, string}|null */
+    /** @param array<string, array{string, string, string}> $properties */
+    private static function isContainerGet(Node\Expr\MethodCall $call, array $properties): bool
+    {
+        if (!$call->name instanceof Node\Identifier || strcasecmp($call->name->toString(), 'get') !== 0) return false;
+        $property = self::thisProperty($call->var);
+        if ($property === null || !isset($properties[$property])) return false;
+        return in_array(strtolower($properties[$property][2]), [
+            'psr\\container\\containerinterface',
+            'symfony\\component\\dependencyinjection\\containerinterface',
+        ], true);
+    }
+
+    /** @return array{string, string}|null Concrete class and exact service ID. */
+    private function containerTarget(Node\Expr\MethodCall $lookup, GraphPolicy $graph): ?array
+    {
+        if (!$this->serviceConfigurationComplete || count($lookup->args) !== 1 || $lookup->args[0]->name !== null || $lookup->args[0]->unpack) return null;
+        $argument = $lookup->args[0]->value;
+        $id = null;
+        if ($argument instanceof Node\Scalar\String_) $id = $argument->value;
+        elseif ($argument instanceof Node\Expr\ClassConstFetch && $argument->class instanceof Node\Name && $argument->name instanceof Node\Identifier && strcasecmp($argument->name->toString(), 'class') === 0 && !in_array(strtolower($argument->class->toString()), ['self', 'static', 'parent'], true)) {
+            $id = ($argument->class->getAttribute('resolvedName') ?? $argument->class)->toString();
+        }
+        if ($id === null || !isset($this->serviceClassBindings[$id])) return null;
+        $class = $this->serviceClassBindings[$id];
+        return $graph->withinRoot($class) ? [$class, $id] : null;
+    }
+
+    /** @param array<string, array{string, string, string}> $properties @return array{string, string}|null */
     private static function receiverBinding(Node\Expr $receiver, string $method, Node\Stmt\Class_ $class, string $className, array $properties): ?array
     {
         if ($receiver instanceof Node\Expr\Variable && $receiver->name === 'this') {
@@ -406,10 +451,10 @@ final class GraphHook implements AfterAnalysisHook
                 ? [$className, 'non-overridable this method'] : null;
         }
         $property = self::thisProperty($receiver);
-        return $property !== null ? ($properties[$property] ?? null) : null;
+        return $property !== null && isset($properties[$property]) ? [$properties[$property][0], $properties[$property][1]] : null;
     }
 
-    /** @param array<string, array{string, string}> $properties @return array{string, string}|null */
+    /** @param array<string, array{string, string, string}> $properties @return array{string, string}|null */
     private static function callbackTarget(Node\Expr $callback, Node\Stmt\Class_ $class, string $className, array $properties): ?array
     {
         if (!$callback instanceof Node\Expr\Array_ || count($callback->items) !== 2) return null;
@@ -477,7 +522,7 @@ final class GraphHook implements AfterAnalysisHook
         return $cache[$key] = null;
     }
 
-    /** @return array<string, array{string, string}> */
+    /** @return array<string, array{string, string, string}> */
     private function injectedProperties(Node\Stmt\Class_ $class, NodeFinder $finder): array
     {
         $constructor = $class->getMethod('__construct');
@@ -490,7 +535,7 @@ final class GraphHook implements AfterAnalysisHook
             $binding = $this->parameterBinding($parameter);
             if ($binding === null) continue;
             $parameters[$name] = $binding;
-            if ($parameter->isPromoted() && $parameter->isPrivate() && ($class->isFinal() || $parameter->isReadonly())) $properties[$name] = [$binding[1], $binding[2]];
+            if ($parameter->isPromoted() && $parameter->isPrivate() && ($class->isFinal() || $parameter->isReadonly())) $properties[$name] = [$binding[1], $binding[2], $binding[0]];
         }
         $declared = [];
         foreach ($class->getProperties() as $property) {
@@ -508,7 +553,7 @@ final class GraphHook implements AfterAnalysisHook
             if ($property === null || !isset($declared[$property]) || !$assignment->expr instanceof Node\Expr\Variable || !is_string($assignment->expr->name)) break;
             $parameter = $assignment->expr->name;
             if (!isset($parameters[$parameter]) || strcasecmp($declared[$property], $parameters[$parameter][0]) !== 0 || isset($properties[$property])) break;
-            $properties[$property] = [$parameters[$parameter][1], $parameters[$parameter][2]];
+            $properties[$property] = [$parameters[$parameter][1], $parameters[$parameter][2], $parameters[$parameter][0]];
             $allowedAssignments[spl_object_id($assignment)] = true;
         }
         foreach ($finder->find($class->stmts, static fn (Node $node): bool => $node instanceof Node\Expr\Assign || $node instanceof Node\Expr\AssignOp || $node instanceof Node\Expr\AssignRef || $node instanceof Node\Expr\PreInc || $node instanceof Node\Expr\PostInc || $node instanceof Node\Expr\PreDec || $node instanceof Node\Expr\PostDec || $node instanceof Node\Stmt\Unset_ || $node instanceof Node\Arg) as $mutation) {

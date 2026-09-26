@@ -1,6 +1,6 @@
 # Mago Architecture Graph
 
-**Beta: 0.1.0-beta.9.** This release checks explicit path-aware module
+**Beta: 0.1.0-beta.10.** This release checks explicit path-aware module
 boundaries and adds a narrow, deterministic call graph. Keep existing
 graph gates until its evidence has been compared on the same project.
 
@@ -102,6 +102,20 @@ function remains incomplete. Duplicate function declarations fail closed.
 The [dispatch corpus](tests/dispatch-corpus) tests complete and incomplete
 cases through the real Mago worker.
 
+For constructor-attested private container properties typed as
+`Psr\Container\ContainerInterface` or Symfony's
+`DependencyInjection\ContainerInterface`, a direct
+`$this->container->get('service.id')->method()` call can enter the declared
+service class. Pass exact service ID-to-class bindings from
+`mago-symfony-wiring`'s `ServiceMap::serviceClassBindings()` as the fifth
+`create()` argument. Literal string IDs and `ClassName::class` IDs are supported.
+The trusted dev service map must be complete, the class must lie in the graph
+namespace root, and the returned object must be called immediately. Unknown
+or dynamic IDs, stored lookup results, mutable container properties and
+unsupported container types report incomplete coverage. This is evidence from
+literal service configuration, not proof of a compiled container or runtime
+decorators.
+
 Reachable recursive components, including function cycles, produce
 `recursive-cycle` errors. A direct
 self-call is classified as `bounded-recursion` only for a final-class method
@@ -121,7 +135,7 @@ not prove that every source file parsed. The [duplicate corpus](tests/duplicate-
 verifies that an ambiguous declaration cannot certify a graph proof.
 
 Other property assignments, mutable service receivers, overridable methods,
-container lookups, decorators, runtime dispatch and indirect callbacks
+indirect container lookups, decorators, runtime dispatch and indirect callbacks
 still need broader treatment. Unsupported reachable calls emit incomplete
 findings where observable. This beta therefore does not yet replace Argus's
 existing reachability gate or authorize verified-graph repair evidence. Use Mago
@@ -129,9 +143,10 @@ Guard for standard dependencies and keep the Argus graph gate enabled while
 parity is developed.
 
 The extension was exercised against a synthetic 20,002-file project under a
-four-CPU, 4 GiB container limit. In three runs each, beta 8 took 1.29–1.33 s
-and beta 9 source took 1.33–1.34 s with identical issues. This fixture has
-few reached function edges and does not measure function-heavy traversal.
+four-CPU, 4 GiB container limit. Three beta 9 and beta 10 source runs returned
+identical issues and overlapping 1.4–2.0 s timings; run-to-run variance was
+larger than the observed difference. This fixture has few reached function or
+container edges and does not measure their traversal costs.
 Those fixtures are small and regular; results
 do not establish a runtime or memory bound for a large Symfony monolith. Measure
 the complete `mago analyze` command on a representative project before relying
