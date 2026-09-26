@@ -9,13 +9,17 @@ use Mago\Sdk\Analyzer\CodebaseScanContext;
 use Mago\Sdk\Analyzer\CodebaseScanHook;
 use Mago\Sdk\Syntax\NodeKind;
 
-/** Names only: detect ambiguous declarations without reparsing all project files. */
+/** Names only: detect ambiguous class and function declarations without reparsing project files. */
 final class DeclarationIndex implements CodebaseScanHook
 {
     /** @var array<string, true> */
     private array $seen = [];
+    /** @var array<string, true> */
+    private array $seenFunctions = [];
     /** @var array<string, array{string, int, string}> */
     private array $duplicates = [];
+    /** @var array<string, array{string, int, string}> */
+    private array $duplicateFunctions = [];
     /** @var list<array{string, int, string}> */
     private array $unknown = [];
     private bool $complete = false;
@@ -31,7 +35,7 @@ final class DeclarationIndex implements CodebaseScanHook
     public function scan(CodebaseScanContext $context): void
     {
         if ($context->firstBatch) {
-            $this->seen = $this->duplicates = $this->unknown = [];
+            $this->seen = $this->seenFunctions = $this->duplicates = $this->duplicateFunctions = $this->unknown = [];
             $this->complete = false;
         }
         foreach ($context->files as $source) {
@@ -59,16 +63,36 @@ final class DeclarationIndex implements CodebaseScanHook
                     else $this->seen[$key] = true;
                 }
             }
+            foreach ($source->getNodes(NodeKind::Function) as $declaration) {
+                $name = null;
+                foreach ($source->getChildren($declaration) as $child) {
+                    if ($child->kind === NodeKind::LocalIdentifier) {
+                        $name = $source->getResolvedName($child)?->name;
+                        break;
+                    }
+                }
+                $location = [$source->path, $declaration->span->start, $name ?? 'unknown function'];
+                if ($name === null) {
+                    $this->unknown[] = $location;
+                    continue;
+                }
+                $key = strtolower($name);
+                if (isset($this->seenFunctions[$key])) $this->duplicateFunctions[$key] ??= $location;
+                else $this->seenFunctions[$key] = true;
+            }
         }
         $this->complete = $context->lastBatch;
     }
 
     public function isDuplicate(string $name): bool { return isset($this->duplicates[strtolower($name)]); }
 
+    public function isDuplicateFunction(string $name): bool { return isset($this->duplicateFunctions[strtolower($name)]); }
+
     /** @return list<array{string, int, string}> */
     public function problems(): array
     {
         $problems = array_values($this->duplicates);
+        foreach ($this->duplicateFunctions as $duplicate) $problems[] = $duplicate;
         foreach ($this->unknown as $unknown) $problems[] = $unknown;
         usort($problems, static fn (array $a, array $b): int => [$a[0], $a[1], $a[2]] <=> [$b[0], $b[1], $b[2]]);
         return $problems;

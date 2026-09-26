@@ -2,6 +2,8 @@
 
 namespace App;
 
+use function App\Sub\aliasTarget as importedTarget;
+
 class CompleteEntry
 {
     private readonly Port $port;
@@ -45,5 +47,20 @@ class CompleteEntry
     public function inheritedConstruction(): void
     {
         new ChildConstruction();
+    }
+
+    public function functionChain(): void
+    {
+        bridge();
+    }
+
+    public function importedFunction(): void
+    {
+        importedTarget();
+    }
+
+    public function functionConstruction(): void
+    {
+        constructGateway();
     }
 }

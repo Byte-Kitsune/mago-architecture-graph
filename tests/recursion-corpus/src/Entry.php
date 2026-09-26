@@ -9,6 +9,7 @@ final class Entry
         Loop::spin();
         Counter::walk(3);
         Left::go();
+        spinFunction();
     }
 
     public static function runAgain(): void
@@ -16,5 +17,6 @@ final class Entry
         Loop::spin();
         Counter::walk(3);
         Left::go();
+        spinFunction();
     }
 }

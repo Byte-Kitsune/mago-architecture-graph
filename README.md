@@ -1,6 +1,6 @@
 # Mago Architecture Graph
 
-**Beta: 0.1.0-beta.8.** This release checks explicit path-aware module
+**Beta: 0.1.0-beta.9.** This release checks explicit path-aware module
 boundaries and adds a narrow, deterministic call graph. Keep existing
 graph gates until its evidence has been compared on the same project.
 
@@ -53,7 +53,7 @@ paths through a real Mago 1.50 Analyzer worker. The smoke corpus is fictional.
 
 The optional `scope_graph` policy builds shortest paths from explicit static
 calls and narrowly proven instance, constructor and callback calls in the complete configured Mago source
-set. It scans class-like declaration names through Mago's already-parsed source
+set. It scans class-like and named-function declaration names through Mago's already-parsed source
 to reject duplicate symbols, then reparses method bodies only in scope files and
 files reached through Mago's method metadata. A scope requires both
 its repository path prefix and namespace prefix. Listed method permissions
@@ -94,12 +94,16 @@ method; the latter uses the same receiver proof as a direct call. A
 first-class callable expression creates a callable and is not treated as an
 invocation. Dynamic callback invocation, unqualified callback helpers that
 could be shadowed by a namespaced function, and recognized callback-taking
-builtins without a literal proof report incomplete coverage. Direct calls to project functions
-also report incomplete coverage until function bodies can enter the graph.
+builtins without a literal proof report incomplete coverage. Namespace-level
+project functions now enter the graph by Mago-resolved name, including imported
+aliases and namespace fallback. Their static calls, literal constructors and
+further named function calls are traversed; dynamic dispatch inside a reached
+function remains incomplete. Duplicate function declarations fail closed.
 The [dispatch corpus](tests/dispatch-corpus) tests complete and incomplete
 cases through the real Mago worker.
 
-Reachable recursive components produce `recursive-cycle` errors. A direct
+Reachable recursive components, including function cycles, produce
+`recursive-cycle` errors. A direct
 self-call is classified as `bounded-recursion` only for a final-class method
 whose sole `int` parameter is guarded by an initial `if ($n <= 0) return;`
 (or `$n < 1`) and whose sole remaining statement calls itself with `$n - 1`.
@@ -125,8 +129,9 @@ Guard for standard dependencies and keep the Argus graph gate enabled while
 parity is developed.
 
 The extension was exercised against a synthetic 20,002-file project under a
-four-CPU, 4 GiB container limit. In three runs each, beta.7 took 1.26–1.33 s
-and beta.8 source took 1.28–1.32 s with identical issues.
+four-CPU, 4 GiB container limit. In three runs each, beta 8 took 1.29–1.33 s
+and beta 9 source took 1.33–1.34 s with identical issues. This fixture has
+few reached function edges and does not measure function-heavy traversal.
 Those fixtures are small and regular; results
 do not establish a runtime or memory bound for a large Symfony monolith. Measure
 the complete `mago analyze` command on a representative project before relying
