@@ -11,6 +11,8 @@ use ByteKitsune\MagoArchitectureGraph\Analyzer\CallCollector;
 use PhpParser\NodeFinder;
 use PhpParser\Node\Stmt\Class_;
 use PhpParser\ParserFactory;
+use PhpParser\NodeTraverser;
+use PhpParser\NodeVisitor\NameResolver;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
@@ -74,6 +76,23 @@ foreach ([
     if (!$class instanceof Class_ || $asAlias->invoke(null, $class) !== $expected) throw new RuntimeException('Symfony AsAlias shape mismatch.');
 }
 echo "AsAlias shape checks passed\n";
+
+$bindings = new ReflectionMethod(GraphHook::class, 'injectedProperties');
+$hook = new GraphHook(new Policy(__DIR__ . '/alias-corpus', __DIR__ . '/alias-corpus/policy.json'), ['app\\port' => 'App\\Gateway']);
+foreach ([
+    'private Port $port; public function __construct(Port $port) { $this->port = $port; }' => true,
+    'public function __construct(private Port $port) {}' => true,
+    'private Port $port; public function __construct(Port $port) { if (rand(0, 1)) $this->port = $port; }' => false,
+    'private Port $port; public function __construct(Port $port) { $port = new Other(); $this->port = $port; }' => false,
+    'private Other $port; public function __construct(Port $port) { $this->port = $port; }' => false,
+    'private Port $port; public function __construct(Port $port) { $this->port = $port; } public function replace(Port $port): void { $this->port = $port; }' => false,
+    'private Port $port; public function __construct(Port $port) { $this->port = $port; } public function replace(string $name, Port $port): void { $this->{$name} = $port; }' => false,
+] as $body => $expected) {
+    $parsed = (new NodeTraverser(new NameResolver()))->traverse($parser->parse('<?php namespace App; final class Example { ' . $body . ' }'));
+    $class = $finder->findFirstInstanceOf($parsed, Class_::class);
+    if (!$class instanceof Class_ || isset($bindings->invoke($hook, $class, $finder)['port']) !== $expected) throw new RuntimeException('Constructor property attestation mismatch: ' . $body);
+}
+echo "Constructor property checks passed\n";
 
 $parsed = $parser->parse('<?php final class Deferred { public function run(): void { $later = function () { Gateway::denied(); }; Service::run(); } }');
 $class = $finder->findFirstInstanceOf($parsed, Class_::class);

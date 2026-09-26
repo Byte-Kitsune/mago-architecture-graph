@@ -39,7 +39,7 @@ set -e
 php -r '
 $issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
 $proofs=array_values(array_filter($issues,fn($i)=>$i["code"]==="byte-kitsune/architecture-graph/scope-forbidden-entrypoint-method"));
-if (count($proofs)!==3 || count($issues)!==3) throw new RuntimeException("Alias corpus did not produce exactly three denials.");
+if (count($proofs)!==5 || count($issues)!==5) throw new RuntimeException("Alias corpus did not produce exactly five denials.");
 foreach ($proofs as $issue) {
     $proof=json_decode(substr($issue["notes"][0],strlen("graph-evidence: ")),true,512,JSON_THROW_ON_ERROR);
     if (($proof["complete"]??null)!==true || count($proof["edges"]??[])!==1 || !str_starts_with($proof["edges"][0]["evidence"],"Symfony ")) throw new RuntimeException("Alias proof incomplete or misbound.");
@@ -90,4 +90,32 @@ foreach ($issues as $issue) if ($issue["code"]==="byte-kitsune/architecture-grap
     if (($proof["complete"]??null)!==false) throw new RuntimeException("Cycle did not invalidate graph completeness.");
 }
 echo "Recursion graph corpus passed\n";
+' "$report"
+cd ../unsafe-property-corpus
+set +e
+../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+status=$?
+set -e
+[ "$status" -eq 1 ]
+php -r '
+$issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
+$incomplete=array_values(array_filter($issues,fn($issue)=>$issue["code"]==="byte-kitsune/architecture-graph/scope-graph-incomplete"));
+$proofs=array_values(array_filter($issues,fn($issue)=>str_ends_with($issue["code"],"-entrypoint-method")));
+if (count($incomplete)!==1 || $proofs!==[] || !str_contains($incomplete[0]["message"],"Unresolved instance receiver")) throw new RuntimeException("Mutable constructor property was treated as a proof.");
+echo "Mutable property corpus passed\n";
+' "$report"
+cd ../duplicate-corpus
+set +e
+../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+status=$?
+set -e
+[ "$status" -eq 1 ]
+php -r '
+$issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
+$denied=array_values(array_filter($issues,fn($issue)=>$issue["code"]==="byte-kitsune/architecture-graph/scope-forbidden-entrypoint-method"));
+$incomplete=array_values(array_filter($issues,fn($issue)=>$issue["code"]==="byte-kitsune/architecture-graph/scope-graph-incomplete"));
+if (count($denied)!==1 || $incomplete===[]) throw new RuntimeException("Duplicate stage did not fail closed.");
+$proof=json_decode(substr($denied[0]["notes"][0],strlen("graph-evidence: ")),true,512,JSON_THROW_ON_ERROR);
+if (($proof["complete"]??null)!==false || count($proof["edges"]??[])!==1) throw new RuntimeException("Duplicate stage certified a graph proof.");
+echo "Duplicate declaration corpus passed\n";
 ' "$report"
