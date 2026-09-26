@@ -14,7 +14,8 @@
     "namespace_root":"App",
     "scopes":[{"id":"entry","path_prefix":"src/Entry.php","namespace_prefix":"App\\"}],
     "method_permissions":[
-      {"scope_id":"entry","target_type":"App\\Counter","method":"walk","decision":"allow","policy_id":"bounded","rationale":"Fixture recursion"}
+      {"scope_id":"entry","target_type":"App\\Counter","method":"walk","decision":"allow","policy_id":"bounded","rationale":"Fixture recursion"},
+      {"scope_id":"entry","target_type":"App\\Loop","method":"spin","decision":"deny","policy_id":"loop","rationale":"Fixture recursion"}
     ],
     "exclusions":[]
   }

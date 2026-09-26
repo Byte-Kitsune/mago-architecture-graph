@@ -83,7 +83,8 @@ whose sole `int` parameter is guarded by an initial `if ($n <= 0) return;`
 (or `$n < 1`) and whose sole remaining statement calls itself with `$n - 1`.
 This proves termination of that narrow shape, not its query cost. Mutual cycles,
 other break conditions and dynamic dispatch remain hard errors or incomplete
-coverage. Detection uses an iterative graph walk, so long chains do not consume
+coverage. A denied method does not end traversal, so a cycle behind a denial
+remains visible. Detection uses an iterative graph walk, so long chains do not consume
 the PHP call stack.
 
 Regular property assignments, mutable service receivers, non-final receiver

@@ -192,7 +192,6 @@ final class GraphHook implements AfterAnalysisHook
                     $permission = $graph->permission($scopeId, $nodes[$current]['symbol']);
                     if ($permission !== null) {
                         $proofs[] = [$scopeId, $permission, $proof, $nodes[$current]];
-                        if ($permission['decision'] === 'deny') continue;
                     }
                 }
                 $limit = $graph->mode === 'direct' ? 1 : $graph->maxDepth;

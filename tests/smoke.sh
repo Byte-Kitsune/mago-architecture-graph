@@ -81,7 +81,7 @@ set -e
 php -r '
 $issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
 $codes=array_column($issues,"code");
-foreach (["recursive-cycle"=>2,"bounded-recursion"=>1,"scope-allowed-entrypoint-method"=>2] as $suffix=>$expected) {
+foreach (["recursive-cycle"=>2,"bounded-recursion"=>1,"scope-allowed-entrypoint-method"=>2,"scope-forbidden-entrypoint-method"=>1] as $suffix=>$expected) {
     if (count(array_filter($codes,fn($code)=>$code==="byte-kitsune/architecture-graph/".$suffix))!==$expected) throw new RuntimeException("Wrong recursion classification: ".$suffix);
 }
 foreach ($issues as $issue) if ($issue["code"]==="byte-kitsune/architecture-graph/scope-allowed-entrypoint-method") {
