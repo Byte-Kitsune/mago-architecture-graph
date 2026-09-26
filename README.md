@@ -1,8 +1,8 @@
 # Mago Architecture Graph
 
-**Beta: 0.1.0-beta.1.** The first release checks explicit path-aware module
-boundaries. Call-graph reachability is still being ported; do not remove an
-existing graph gate until its evidence has been compared on the same project.
+**Beta: 0.1.0-beta.2.** This release checks explicit path-aware module
+boundaries and adds a narrow, deterministic static-call graph. Keep existing
+graph gates until its evidence has been compared on the same project.
 
 This is a Mago **Analyzer Plugin**. Mago 1.50 does not expose an extension API
 for its native Guard. Use Guard's `perimeter` and `structural` rules for ordinary
@@ -11,7 +11,7 @@ case where the actual source path and parsed namespace must jointly select a
 module, where module families isolate path instances, or where another layer
 may import only a public entrypoint.
 
-The first beta examines literal class `use` imports. It does not infer method
+The boundary rule examines literal class `use` imports. It does not infer method
 calls, resolve dynamic service names, or prove that a class exists at a mapped
 PSR-4 path. Mago's Analyzer and Guard retain their own diagnostics. Parse errors
 produce no guessed architecture edges.
@@ -49,3 +49,20 @@ rejects unknown fields, duplicate modules, invalid roots and dangling layers.
 
 Run `composer install` and `sh tests/smoke.sh` to exercise positive and negative
 paths through a real Mago 1.50 Analyzer worker. The smoke corpus is fictional.
+
+The optional `scope_graph` policy builds shortest paths from explicit static
+method calls in the complete configured Mago source set. A scope requires both
+its repository path prefix and namespace prefix. Listed method permissions
+produce native Mago error or note findings with a bounded `graph-evidence` JSON
+note containing the path, policy ID, target declaration and completeness flag.
+Unresolved in-root targets, unsupported dynamic/relative calls, parse failures
+and exhausted transitive depth produce `scope-graph-incomplete` errors. A direct
+mode stops after one call without treating later calls as missing coverage.
+The fictional [graph policy](tests/graph-corpus/policy.json) shows a two-hop
+denial and allowance.
+
+This graph subset currently does not trace instance calls, Symfony service
+aliases, runtime dispatch or recursive call termination. Those gaps prevent it from
+replacing Argus's existing reachability gate or its verified-graph repair
+evidence. Use Mago Guard for standard dependencies and keep the Argus graph gate
+enabled while parity is developed.

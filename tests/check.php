@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use ByteKitsune\MagoArchitectureGraph\Policy;
+use ByteKitsune\MagoArchitectureGraph\GraphPolicy;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
@@ -21,3 +22,17 @@ if ($policy->violation($source, $hidden, $sourcePath, 'src/Area/Alpha/Service/In
 if ($policy->violation($source, $foreign, $sourcePath, 'src/Area/Beta/Service/OtherService.php') !== 'foreign-module-instance') throw new RuntimeException('Foreign instance was allowed.');
 if ($policy->targetPath('App\Area\Alpha\Service\OrderService') !== 'src/Area/Alpha/Service/OrderService.php') throw new RuntimeException('Target path mapping failed.');
 echo "Policy checks passed\n";
+
+$graphData = json_decode(file_get_contents(__DIR__ . '/graph-corpus/policy.json'), true, 64, JSON_THROW_ON_ERROR)['scope_graph'];
+$graph = new GraphPolicy($graphData);
+if ($graph->scopeFor('src/Red/Entry.php', 'App\\Red\\Entry')['id'] !== 'red') throw new RuntimeException('Graph scope matching failed.');
+if ($graph->scopeFor('src/Red/Entry.php', 'App\\Blue\\Entry') !== null) throw new RuntimeException('Graph scope ignored namespace.');
+if ($graph->permission('red', 'App\\Api\\Gateway::expensive')['decision'] !== 'deny') throw new RuntimeException('Graph denial missing.');
+if ($graph->permission('blue', 'App\\Api\\Gateway::expensive')['decision'] !== 'allow') throw new RuntimeException('Graph allowance missing.');
+$invalid = $graphData;
+$invalid['source_root'] = '../outside';
+try { new GraphPolicy($invalid); throw new RuntimeException('Unsafe graph root accepted.'); } catch (InvalidArgumentException) {}
+$invalid = $graphData;
+$invalid['mode'] = 'unknown';
+try { new GraphPolicy($invalid); throw new RuntimeException('Unknown graph mode accepted.'); } catch (InvalidArgumentException) {}
+echo "Graph policy checks passed\n";
