@@ -14,6 +14,7 @@ final class Policy
     private readonly string $sourceRoot;
     private readonly string $namespaceRoot;
     public readonly string $projectRoot;
+    public readonly ?GraphPolicy $graph;
 
     public function __construct(string $projectRoot, string $policyPath)
     {
@@ -24,7 +25,7 @@ final class Policy
         $bytes = file_get_contents($policyPath);
         if ($bytes === false) throw new InvalidArgumentException('Cannot read architecture policy.');
         $data = json_decode($bytes, true, 64, JSON_THROW_ON_ERROR);
-        if (!is_array($data) || array_is_list($data) || array_diff(array_keys($data), ['version', 'source_root', 'namespace_root', 'modules']) !== [] || ($data['version'] ?? null) !== '1' || !self::safePath($data['source_root'] ?? null) || !self::namespace($data['namespace_root'] ?? null)) throw new InvalidArgumentException('Invalid architecture policy header.');
+        if (!is_array($data) || array_is_list($data) || array_diff(array_keys($data), ['version', 'source_root', 'namespace_root', 'modules', 'scope_graph']) !== [] || ($data['version'] ?? null) !== '1' || !self::safePath($data['source_root'] ?? null) || !self::namespace($data['namespace_root'] ?? null)) throw new InvalidArgumentException('Invalid architecture policy header.');
         if (!isset($data['modules']) || !is_array($data['modules']) || !array_is_list($data['modules']) || count($data['modules']) < 1 || count($data['modules']) > 128) throw new InvalidArgumentException('Architecture policy requires 1..128 ordered modules.');
         $ids = [];
         foreach ($data['modules'] as $module) {
@@ -60,6 +61,7 @@ final class Policy
         $this->sourceRoot = rtrim($data['source_root'], '/');
         $this->namespaceRoot = rtrim($data['namespace_root'], '\\');
         $this->modules = $data['modules'];
+        $this->graph = isset($data['scope_graph']) ? new GraphPolicy($data['scope_graph']) : null;
     }
 
     public function relativePath(string $file): ?string
