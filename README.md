@@ -1,6 +1,6 @@
 # Mago Architecture Graph
 
-**Beta: 0.1.0-beta.7.** This release checks explicit path-aware module
+**Beta: 0.1.0-beta.8.** This release checks explicit path-aware module
 boundaries and adds a narrow, deterministic call graph. Keep existing
 graph gates until its evidence has been compared on the same project.
 
@@ -52,7 +52,7 @@ Run `composer install` and `sh tests/smoke.sh` to exercise positive and negative
 paths through a real Mago 1.50 Analyzer worker. The smoke corpus is fictional.
 
 The optional `scope_graph` policy builds shortest paths from explicit static
-calls and narrowly proven instance calls in the complete configured Mago source
+calls and narrowly proven instance, constructor and callback calls in the complete configured Mago source
 set. It scans class-like declaration names through Mago's already-parsed source
 to reject duplicate symbols, then reparses method bodies only in scope files and
 files reached through Mago's method metadata. A scope requires both
@@ -78,9 +78,26 @@ metadata. Ambiguous or unsupported aliases are incomplete, never guessed.
 Only files that can implement a reached interface are inspected. The
 [alias corpus](tests/alias-corpus) covers ordinary, named and attribute aliases.
 Ordinary properties require a leading constructor assignment and no later
-class write. Conditional assignments, dynamic writes and mutable properties
-stay incomplete; the [unsafe-property corpus](tests/unsafe-property-corpus)
-checks this rejection.
+class write. A non-final class can use the same proof only for a private
+`readonly` promoted or ordinary property. Calls on `$this` in a non-final
+class are followed only when the declared target method is private or final;
+overridable dispatch remains incomplete. Conditional assignments, dynamic
+writes and mutable properties stay incomplete; the
+[unsafe-property corpus](tests/unsafe-property-corpus) checks this rejection.
+
+Literal in-root `new ClassName(...)` calls enter the declared or inherited constructor,
+including a parent constructor. Dynamic construction is incomplete. Explicit
+global `\call_user_func` and `\call_user_func_array` calls enter a literal
+`[ClassName::class, 'staticMethod']` or constructor-attested
+`[$this->service, 'method']` callback. The former requires a declared static
+method; the latter uses the same receiver proof as a direct call. A
+first-class callable expression creates a callable and is not treated as an
+invocation. Dynamic callback invocation, unqualified callback helpers that
+could be shadowed by a namespaced function, and recognized callback-taking
+builtins without a literal proof report incomplete coverage. Direct calls to project functions
+also report incomplete coverage until function bodies can enter the graph.
+The [dispatch corpus](tests/dispatch-corpus) tests complete and incomplete
+cases through the real Mago worker.
 
 Reachable recursive components produce `recursive-cycle` errors. A direct
 self-call is classified as `bounded-recursion` only for a final-class method
@@ -99,8 +116,8 @@ must fail the analyzer gate; an individual `graph-evidence.complete` field does
 not prove that every source file parsed. The [duplicate corpus](tests/duplicate-corpus)
 verifies that an ambiguous declaration cannot certify a graph proof.
 
-Other property assignments, mutable service receivers, non-final receiver
-classes, container lookups, decorators, runtime dispatch and indirect callbacks
+Other property assignments, mutable service receivers, overridable methods,
+container lookups, decorators, runtime dispatch and indirect callbacks
 still need broader treatment. Unsupported reachable calls emit incomplete
 findings where observable. This beta therefore does not yet replace Argus's
 existing reachability gate or authorize verified-graph repair evidence. Use Mago
@@ -108,8 +125,8 @@ Guard for standard dependencies and keep the Argus graph gate enabled while
 parity is developed.
 
 The extension was exercised against a synthetic 20,002-file project under a
-four-CPU, 4 GiB container limit. In three runs each, the pre-scan beta took
-0.93–1.01 s and the declaration-scan version took 1.30 s with identical issues.
+four-CPU, 4 GiB container limit. In three runs each, beta.7 took 1.26–1.33 s
+and beta.8 source took 1.28–1.32 s with identical issues.
 Those fixtures are small and regular; results
 do not establish a runtime or memory bound for a large Symfony monolith. Measure
 the complete `mago analyze` command on a representative project before relying
