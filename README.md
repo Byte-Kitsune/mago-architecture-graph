@@ -7,7 +7,7 @@ Path-aware module boundaries and a conservative PHP call graph for [Mago](https:
 Requires PHP 8.2+ and Mago 1.50. Pin the beta in your project:
 
 ```sh
-composer require --dev carthage-software/mago:1.50.0 byte-kitsune/mago-architecture-graph:0.1.0-beta.12
+composer require --dev carthage-software/mago:1.50.0 byte-kitsune/mago-architecture-graph:0.1.0-beta.13
 ```
 
 Add an extension host to `mago.toml` (keep your normal `[source]` paths configured):
@@ -111,6 +111,8 @@ Pass only reviewed shared/dev service files. A complete literal map proves confi
 ## Read the results
 
 Boundary violations appear as Analyzer issues such as `foreign-module-instance` and `forbidden-internal-access`. Graph permissions produce `scope-forbidden-entrypoint-method` errors or `scope-allowed-entrypoint-method` notes. The `graph-evidence` note contains the shortest modeled path, policy ID, target and `complete` flag. `scope-graph-incomplete` means a reached part could not be proven; do not interpret missing denials as a clean graph when it appears. Reachable unproven recursion is `recursive-cycle`; only a narrow guarded integer-decrement self-call is classified as `bounded-recursion`.
+
+When the graph is enabled and at least one PHP source is in its configured root, the Analyzer also emits one `analysis-attestation` note. Its bounded `extension-attestation` payload identifies the extension, version, `scope_graph` capability, source-file count and completeness. Consumers that require graph coverage should require this note; its absence must not count as a clean run.
 
 This is static evidence, not a runtime trace. It does not replace Mago's parse diagnostics or prove all PHP execution paths. Benchmark the full `mago analyze` run on your own project before setting a CI time budget.
 

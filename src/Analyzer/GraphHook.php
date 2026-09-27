@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ByteKitsune\MagoArchitectureGraph\Analyzer;
 
+use ByteKitsune\MagoArchitectureGraph\ArchitectureGraphExtension;
 use ByteKitsune\MagoArchitectureGraph\GraphPolicy;
 use ByteKitsune\MagoArchitectureGraph\Policy;
 use Mago\Sdk\Analyzer\AfterAnalysisContext;
@@ -386,6 +387,21 @@ final class GraphHook implements AfterAnalysisHook
         foreach ([...$unresolved, ...array_values($depthWarnings)] as [$file, $position, $reason]) $this->report($context, Level::Error, 'scope-graph-incomplete', 'Call graph coverage is incomplete: ' . $reason, $file, $position, $position + 1);
         $complete = $unresolved === [] && $depthWarnings === [] && !$cycleIncomplete;
         foreach ($proofs as [$scope, $permission, $proof, $target]) $this->reportProof($context, $scope, $permission, $proof, $target, $complete);
+        if ($files !== []) {
+            $first = reset($files)->getSourceFile();
+            $attestation = [
+                'schema_version' => '1',
+                'extension' => 'byte-kitsune/architecture-graph',
+                'version' => ArchitectureGraphExtension::VERSION,
+                'capability' => 'scope_graph',
+                'complete' => $complete,
+                'source_files' => count($files),
+            ];
+            $note = 'extension-attestation: ' . json_encode($attestation, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+            $end = $first->contents === '' ? 0 : 1;
+            $issue = Issue::at('Architecture graph analysis completed.', new SourceLocation($first->path, new Span(0, $end)))->withNote($note);
+            $context->report(Level::Note, 'analysis-attestation', $issue);
+        }
     }
 
     /** @param array<string, mixed> $permission @param list<array<string, mixed>> $proof @param array<string, mixed> $target */
