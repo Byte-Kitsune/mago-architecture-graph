@@ -8,6 +8,7 @@ final class Entry
     {
         Loop::spin();
         Counter::walk(3);
+        Counter::walkByTwo(4);
         Left::go();
         spinFunction();
     }

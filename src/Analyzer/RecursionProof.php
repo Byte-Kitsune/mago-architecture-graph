@@ -35,7 +35,8 @@ final class RecursionProof
             && strcasecmp($call->name->toString(), $method->name->toString()) === 0;
         if (!$sameMethod || count($call->args) !== 1 || $call->args[0]->name !== null || $call->args[0]->unpack || $call->args[0]->byRef) return false;
         $argument = $call->args[0]->value;
-        return $argument instanceof Node\Expr\BinaryOp\Minus && self::variable($argument->left, $name) && self::integer($argument->right, 1);
+        return $argument instanceof Node\Expr\BinaryOp\Minus && self::variable($argument->left, $name)
+            && $argument->right instanceof Node\Scalar\Int_ && $argument->right->value > 0;
     }
 
     private static function variable(Node $node, string $name): bool

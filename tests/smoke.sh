@@ -24,7 +24,7 @@ if (count($attestations)!==1) throw new RuntimeException("Expected one architect
 $note=$attestations[0]["notes"][0]??"";
 if (!str_starts_with($note,"extension-attestation: ")) throw new RuntimeException("Missing extension attestation payload.");
 $attestation=json_decode(substr($note,strlen("extension-attestation: ")),true,512,JSON_THROW_ON_ERROR);
-if (($attestation["schema_version"]??null)!=="1" || ($attestation["extension"]??null)!=="byte-kitsune/architecture-graph" || ($attestation["version"]??null)!=="0.1.0-beta.13" || ($attestation["capability"]??null)!=="scope_graph" || ($attestation["complete"]??null)!==false || ($attestation["source_files"]??0)<1) throw new RuntimeException("Invalid architecture analysis attestation.");
+if (($attestation["schema_version"]??null)!=="1" || ($attestation["extension"]??null)!=="byte-kitsune/architecture-graph" || ($attestation["version"]??null)!=="0.1.0-beta.14" || ($attestation["capability"]??null)!=="scope_graph" || ($attestation["complete"]??null)!==false || ($attestation["source_files"]??0)<1) throw new RuntimeException("Invalid architecture analysis attestation.");
 foreach (["scope-forbidden-entrypoint-method"=>1,"scope-allowed-entrypoint-method"=>3,"scope-graph-incomplete"=>1] as $suffix=>$expected) {
     $matches=array_values(array_filter($issues,fn($i)=>$i["code"]==="byte-kitsune/architecture-graph/".$suffix));
     if (count($matches)!==$expected) { fwrite(STDERR,"Expected $expected $suffix, got ".count($matches)."\n"); exit(1); }
@@ -88,9 +88,10 @@ set -e
 php -r '
 $issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
 $codes=array_column($issues,"code");
-foreach (["recursive-cycle"=>3,"bounded-recursion"=>1,"scope-allowed-entrypoint-method"=>4,"scope-forbidden-entrypoint-method"=>2] as $suffix=>$expected) {
+foreach (["recursive-cycle"=>3,"bounded-recursion"=>2,"scope-allowed-entrypoint-method"=>6,"scope-forbidden-entrypoint-method"=>2] as $suffix=>$expected) {
     if (count(array_filter($codes,fn($code)=>$code==="byte-kitsune/architecture-graph/".$suffix))!==$expected) throw new RuntimeException("Wrong recursion classification: ".$suffix);
 }
+if (!array_filter($issues,fn($issue)=>$issue["code"]==="byte-kitsune/architecture-graph/bounded-recursion" && str_contains($issue["message"],"walkByTwo"))) throw new RuntimeException("Positive two-step recursion breaker was not proven.");
 foreach ($issues as $issue) if ($issue["code"]==="byte-kitsune/architecture-graph/scope-allowed-entrypoint-method") {
     $proof=json_decode(substr($issue["notes"][0],strlen("graph-evidence: ")),true,512,JSON_THROW_ON_ERROR);
     if (($proof["complete"]??null)!==false) throw new RuntimeException("Cycle did not invalidate graph completeness.");
@@ -194,4 +195,68 @@ if (!str_contains(implode(" ",array_column($incomplete,"message")),"Duplicate or
 $proof=json_decode(substr($denied[0]["notes"][0],strlen("graph-evidence: ")),true,512,JSON_THROW_ON_ERROR);
 if (($proof["complete"]??null)!==false || count($proof["edges"]??[])!==1) throw new RuntimeException("Duplicate stage certified a graph proof.");
 echo "Duplicate declaration corpus passed\n";
+' "$report"
+cd ../proof-size-corpus
+set +e
+../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+status=$?
+set -e
+[ "$status" -eq 1 ]
+php -r '
+$issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
+$codes=array_column($issues,"code");
+$prefix="byte-kitsune/architecture-graph/";
+if (count(array_filter($codes,fn($code)=>$code===$prefix."scope-graph-incomplete"))!==1) throw new RuntimeException("Oversized graph proof did not report incomplete coverage.");
+if (count(array_filter($codes,fn($code)=>$code===$prefix."scope-forbidden-entrypoint-method"))!==0) throw new RuntimeException("Oversized graph proof was published.");
+$attestations=array_values(array_filter($issues,fn($issue)=>$issue["code"]===$prefix."analysis-attestation"));
+if (count($attestations)!==1) throw new RuntimeException("Missing graph attestation.");
+$note=$attestations[0]["notes"][0]??"";
+if (!str_starts_with($note,"extension-attestation: ")) throw new RuntimeException("Missing structured attestation.");
+$attestation=json_decode(substr($note,strlen("extension-attestation: ")),true,512,JSON_THROW_ON_ERROR);
+if (($attestation["complete"]??null)!==false || ($attestation["source_files"]??null)!==2) throw new RuntimeException("Oversized proof was attested complete.");
+echo "Oversized proof attestation corpus passed\n";
+' "$report"
+cd ../local-receiver-corpus
+set +e
+../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+status=$?
+set -e
+[ "$status" -eq 1 ]
+php -r '
+$issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
+$prefix="byte-kitsune/architecture-graph/";
+$denied=array_values(array_filter($issues,fn($issue)=>$issue["code"]===$prefix."scope-forbidden-entrypoint-method"));
+$incomplete=array_values(array_filter($issues,fn($issue)=>$issue["code"]===$prefix."scope-graph-incomplete"));
+if (count($denied)!==2 || count($incomplete)!==3) throw new RuntimeException("Local receiver coverage changed.");
+$reasons=implode(" ",array_column($incomplete,"message"));
+foreach (["reassigned","branched","escaped"] as $method) if (!str_contains($reasons,$method)) throw new RuntimeException("Unsafe local receiver was not rejected: ".$method);
+$evidence=[];
+foreach ($denied as $issue) {
+    $proof=json_decode(substr($issue["notes"][0],strlen("graph-evidence: ")),true,512,JSON_THROW_ON_ERROR);
+    if (($proof["complete"]??null)!==false) throw new RuntimeException("Unsafe receiver scope was certified complete.");
+    $evidence[]=$proof["edges"][0]["evidence"]??"";
+}
+foreach (["literal temporary instance","straight-line local instance"] as $name) if (!str_contains(implode(" ",$evidence),$name)) throw new RuntimeException("Missing exact receiver evidence: ".$name);
+echo "Conservative local receiver corpus passed\n";
+' "$report"
+set +e
+ARCHITECTURE_SAFE=1 ../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+status=$?
+set -e
+[ "$status" -eq 1 ]
+php -r '
+$issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
+$prefix="byte-kitsune/architecture-graph/";
+$denied=array_values(array_filter($issues,fn($issue)=>$issue["code"]===$prefix."scope-forbidden-entrypoint-method"));
+if (count($denied)!==2 || count(array_filter($issues,fn($issue)=>$issue["code"]===$prefix."scope-graph-incomplete"))!==0) throw new RuntimeException("Exact receivers did not form a complete scoped graph.");
+foreach ($denied as $issue) {
+    $proof=json_decode(substr($issue["notes"][0],strlen("graph-evidence: ")),true,512,JSON_THROW_ON_ERROR);
+    if (($proof["complete"]??null)!==true) throw new RuntimeException("Exact receiver proof was marked incomplete.");
+}
+$attestations=array_values(array_filter($issues,fn($issue)=>$issue["code"]===$prefix."analysis-attestation"));
+if (count($attestations)!==1) throw new RuntimeException("Missing exact receiver attestation.");
+$note=$attestations[0]["notes"][0]??"";
+$attestation=json_decode(substr($note,strlen("extension-attestation: ")),true,512,JSON_THROW_ON_ERROR);
+if (($attestation["complete"]??null)!==true) throw new RuntimeException("Exact receiver graph was not attested complete.");
+echo "Complete local receiver corpus passed\n";
 ' "$report"

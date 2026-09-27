@@ -1,0 +1,43 @@
+<?php
+namespace App\Chain;
+final class Node00_VeryLongLiteralMethodCallTarget { public static function step(): void { Node01_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node01_VeryLongLiteralMethodCallTarget { public static function step(): void { Node02_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node02_VeryLongLiteralMethodCallTarget { public static function step(): void { Node03_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node03_VeryLongLiteralMethodCallTarget { public static function step(): void { Node04_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node04_VeryLongLiteralMethodCallTarget { public static function step(): void { Node05_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node05_VeryLongLiteralMethodCallTarget { public static function step(): void { Node06_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node06_VeryLongLiteralMethodCallTarget { public static function step(): void { Node07_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node07_VeryLongLiteralMethodCallTarget { public static function step(): void { Node08_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node08_VeryLongLiteralMethodCallTarget { public static function step(): void { Node09_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node09_VeryLongLiteralMethodCallTarget { public static function step(): void { Node10_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node10_VeryLongLiteralMethodCallTarget { public static function step(): void { Node11_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node11_VeryLongLiteralMethodCallTarget { public static function step(): void { Node12_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node12_VeryLongLiteralMethodCallTarget { public static function step(): void { Node13_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node13_VeryLongLiteralMethodCallTarget { public static function step(): void { Node14_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node14_VeryLongLiteralMethodCallTarget { public static function step(): void { Node15_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node15_VeryLongLiteralMethodCallTarget { public static function step(): void { Node16_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node16_VeryLongLiteralMethodCallTarget { public static function step(): void { Node17_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node17_VeryLongLiteralMethodCallTarget { public static function step(): void { Node18_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node18_VeryLongLiteralMethodCallTarget { public static function step(): void { Node19_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node19_VeryLongLiteralMethodCallTarget { public static function step(): void { Node20_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node20_VeryLongLiteralMethodCallTarget { public static function step(): void { Node21_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node21_VeryLongLiteralMethodCallTarget { public static function step(): void { Node22_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node22_VeryLongLiteralMethodCallTarget { public static function step(): void { Node23_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node23_VeryLongLiteralMethodCallTarget { public static function step(): void { Node24_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node24_VeryLongLiteralMethodCallTarget { public static function step(): void { Node25_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node25_VeryLongLiteralMethodCallTarget { public static function step(): void { Node26_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node26_VeryLongLiteralMethodCallTarget { public static function step(): void { Node27_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node27_VeryLongLiteralMethodCallTarget { public static function step(): void { Node28_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node28_VeryLongLiteralMethodCallTarget { public static function step(): void { Node29_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node29_VeryLongLiteralMethodCallTarget { public static function step(): void { Node30_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node30_VeryLongLiteralMethodCallTarget { public static function step(): void { Node31_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node31_VeryLongLiteralMethodCallTarget { public static function step(): void { Node32_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node32_VeryLongLiteralMethodCallTarget { public static function step(): void { Node33_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node33_VeryLongLiteralMethodCallTarget { public static function step(): void { Node34_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node34_VeryLongLiteralMethodCallTarget { public static function step(): void { Node35_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node35_VeryLongLiteralMethodCallTarget { public static function step(): void { Node36_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node36_VeryLongLiteralMethodCallTarget { public static function step(): void { Node37_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node37_VeryLongLiteralMethodCallTarget { public static function step(): void { Node38_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node38_VeryLongLiteralMethodCallTarget { public static function step(): void { Node39_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node39_VeryLongLiteralMethodCallTarget { public static function step(): void { Node40_VeryLongLiteralMethodCallTarget::step(); } }
+final class Node40_VeryLongLiteralMethodCallTarget { public static function step(): void {  } }
