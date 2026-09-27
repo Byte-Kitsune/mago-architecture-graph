@@ -87,4 +87,11 @@ class CompleteEntry
         $service = $this->container->get('gateway.alias');
         $service->expensive();
     }
+
+    public function serviceByLocalCalls(string $text): void
+    {
+        $service = $this->container->get('gateway.service');
+        $service->expensive();
+        $service->expensiveWith($text);
+    }
 }

@@ -84,12 +84,15 @@ final class GraphHook implements AfterAnalysisHook
                         $calls[] = self::edge($symbol, $targetClass . '::' . $call->name->toString(), $path, $source->path, $source->contents, $call, 'explicit static call');
                     }
                     $consumedLookups = [];
-                    $localServiceCall = $this->singleUseContainerCall($method->stmts ?? [], $properties, $graph);
-                    if ($localServiceCall !== null) {
-                        [$lookup, $localCall, $targetClass, $id] = $localServiceCall;
+                    $localServiceCalls = $this->straightLineContainerCalls($method->stmts ?? [], $properties, $graph);
+                    if ($localServiceCalls !== null) {
+                        [$lookup, $localCalls, $targetClass, $id] = $localServiceCalls;
                         $consumedLookups[spl_object_id($lookup)] = true;
-                        $consumedLookups[spl_object_id($localCall)] = true;
-                        $calls[] = self::edge($symbol, $targetClass . '::' . $localCall->name->toString(), $path, $source->path, $source->contents, $localCall, 'Symfony single-use local service ID ' . $id . ' -> ' . $targetClass);
+                        foreach ($localCalls as $localCall) {
+                            $consumedLookups[spl_object_id($localCall)] = true;
+                            $evidence = count($localCalls) === 1 && $localCall->args === [] ? 'Symfony single-use local service ID ' : 'Symfony straight-line local service ID ';
+                            $calls[] = self::edge($symbol, $targetClass . '::' . $localCall->name->toString(), $path, $source->path, $source->contents, $localCall, $evidence . $id . ' -> ' . $targetClass);
+                        }
                     }
                     foreach ($instanceCalls as $call) {
                         if (isset($consumedLookups[spl_object_id($call)])) continue;
@@ -449,24 +452,40 @@ final class GraphHook implements AfterAnalysisHook
     }
 
     /**
-     * Only two exact statements prove the local cannot be reassigned, read before
-     * assignment, passed elsewhere, or retained beyond its single call.
+     * A bounded sequence of exact statements proves the local is assigned once,
+     * then only used as the receiver of literal calls. Simple arguments cannot
+     * mutate or expose that local. Control flow and other statements fail closed.
      *
      * @param list<Node\Stmt> $statements
      * @param array<string, array{string, string, string}> $properties
-     * @return array{Node\Expr\MethodCall, Node\Expr\MethodCall, string, string}|null
+     * @return array{Node\Expr\MethodCall, list<Node\Expr\MethodCall>, string, string}|null
      */
-    private function singleUseContainerCall(array $statements, array $properties, GraphPolicy $graph): ?array
+    private function straightLineContainerCalls(array $statements, array $properties, GraphPolicy $graph): ?array
     {
-        if (count($statements) !== 2 || !$statements[0] instanceof Node\Stmt\Expression || !$statements[1] instanceof Node\Stmt\Expression) return null;
+        if (count($statements) < 2 || count($statements) > 32 || !$statements[0] instanceof Node\Stmt\Expression) return null;
         $assignment = $statements[0]->expr;
-        $call = $statements[1]->expr;
         if (!$assignment instanceof Node\Expr\Assign || !$assignment->var instanceof Node\Expr\Variable || !is_string($assignment->var->name) || $assignment->var->name === 'this') return null;
         if (!$assignment->expr instanceof Node\Expr\MethodCall || !self::isContainerGet($assignment->expr, $properties)) return null;
-        if (!$call instanceof Node\Expr\MethodCall || !$call->name instanceof Node\Identifier || $call->args !== []) return null;
-        if (!$call->var instanceof Node\Expr\Variable || $call->var->name !== $assignment->var->name) return null;
         $target = $this->containerTarget($assignment->expr, $graph);
-        return $target === null ? null : [$assignment->expr, $call, $target[0], $target[1]];
+        if ($target === null) return null;
+        $calls = [];
+        foreach (array_slice($statements, 1) as $statement) {
+            if (!$statement instanceof Node\Stmt\Expression || !$statement->expr instanceof Node\Expr\MethodCall) return null;
+            $call = $statement->expr;
+            if (!$call->name instanceof Node\Identifier || $call->isFirstClassCallable() || !$call->var instanceof Node\Expr\Variable || $call->var->name !== $assignment->var->name) return null;
+            foreach ($call->args as $argument) {
+                if ($argument->unpack || $argument->byRef || !self::simpleArgument($argument->value, $assignment->var->name)) return null;
+            }
+            $calls[] = $call;
+        }
+        return [$assignment->expr, $calls, $target[0], $target[1]];
+    }
+
+    private static function simpleArgument(Node\Expr $value, string $local): bool
+    {
+        if ($value instanceof Node\Scalar\String_ || $value instanceof Node\Scalar\LNumber || $value instanceof Node\Scalar\DNumber || $value instanceof Node\Expr\ConstFetch) return true;
+        if ($value instanceof Node\Expr\Variable) return is_string($value->name) && $value->name !== $local;
+        return $value instanceof Node\Expr\ClassConstFetch && $value->class instanceof Node\Name && $value->name instanceof Node\Identifier && strcasecmp($value->name->toString(), 'class') === 0;
     }
 
     /** @param array<string, array{string, string, string}> $properties @return array{string, string}|null */
