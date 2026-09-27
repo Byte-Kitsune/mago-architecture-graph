@@ -9,6 +9,7 @@ use Mago\Sdk\Extension;
 
 final class ArchitectureGraphExtension
 {
+    public const VERSION = '0.1.0-beta.13';
     /**
      * The policy and literal service bindings are trusted operator inputs, never selected by analyzed PHP.
      * @param array<string, string> $classBindings Type or "Type $target" to concrete class.
@@ -41,7 +42,7 @@ final class ArchitectureGraphExtension
         return new Extension(
             identifier: 'byte-kitsune/architecture-graph',
             name: 'Path-aware architecture graph',
-            version: '0.1.0-beta.12',
+            version: self::VERSION,
             analyzerPlugins: [new ArchitecturePlugin(new Policy($projectRoot, $policyPath), $typeBindings, $serviceConfigurationComplete, $serviceClassBindings)],
         );
     }
