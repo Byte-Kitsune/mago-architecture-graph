@@ -1,0 +1,39 @@
+{
+  "version": "1",
+  "source_root": "src",
+  "namespace_root": "App",
+  "modules": [
+    {
+      "id": "controller",
+      "path_pattern": "src/Controller/",
+      "namespace_prefix": "App\\Controller\\",
+      "layer": "controller",
+      "allowed_target_layers": ["service"],
+      "entrypoint_suffix": "Controller"
+    },
+    {
+      "id": "service",
+      "path_pattern": "src/Service/",
+      "namespace_prefix": "App\\Service\\",
+      "layer": "service",
+      "allowed_target_layers": [],
+      "entrypoint_suffix": "Service"
+    }
+  ],
+  "scope_graph": {
+    "version": "1",
+    "enabled": true,
+    "mode": "transitive",
+    "max_depth": 4,
+    "source_root": "src",
+    "namespace_root": "App",
+    "scopes": [
+      {"id": "controllers", "path_prefix": "src/Controller/", "namespace_prefix": "App\\Controller\\"}
+    ],
+    "method_permissions": [
+      {"scope_id": "controllers", "target_type": "App\\Service\\Gateway", "method": "expensive", "decision": "deny", "policy_id": "no-expensive-reports", "rationale": "Keep expensive gateway work out of controllers"}
+    ],
+    "unlisted_method_policy": "allow",
+    "exclusions": []
+  }
+}
