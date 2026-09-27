@@ -7,7 +7,7 @@ Path-aware module boundaries and a conservative PHP call graph for [Mago](https:
 Requires PHP 8.2+ and Mago 1.50. Pin the beta in your project:
 
 ```sh
-composer require --dev carthage-software/mago:1.50.0 byte-kitsune/mago-architecture-graph:0.1.0-beta.13
+composer require --dev carthage-software/mago:1.50.0 byte-kitsune/mago-architecture-graph:0.1.0-beta.14
 ```
 
 Add an extension host to `mago.toml` (keep your normal `[source]` paths configured):
@@ -84,7 +84,7 @@ Create `.mago/architecture-policy.json`. Paths are relative to the project root;
 
 Remove `scope_graph` if you only need module boundaries. `direct` graph mode stops after one edge; `transitive` follows calls up to `max_depth` (1–64). A `path_pattern` ending in `/` matches a directory prefix; `*` matches one nonempty segment. `module_family` can capture such segments and restrict imports between instances; see the [module fixture](tests/corpus/policy.json). The [graph fixture](tests/graph-corpus/policy.json) shows separate allow and deny scopes.
 
-The graph follows literal static calls, narrowly proven instance receivers, constructors, literal callbacks, named project functions, and exact Symfony service lookups. A local service variable is followed only when the method consists of one literal `get()` assignment followed by up to 31 straight-line calls on that variable; arguments must be simple literals or variables. Branching, reassignment, escape, dynamic IDs, mutable receivers, overridable dispatch and decorators are **not** silently treated as proven.
+The graph follows literal static calls, narrowly proven instance receivers, constructors, literal callbacks, named project functions, and exact Symfony service lookups. It also follows calls on a literal temporary `new` instance. A local variable assigned one literal `new` expression or exact container `get()` lookup is followed only through up to 31 straight-line calls with simple arguments. Branching, reassignment, escape, dynamic IDs, unproven mutable receivers, overridable dispatch and decorators are **not** silently treated as proven.
 
 For Symfony type, `#[Target]`, and service-ID resolution, install [mago-symfony-wiring](https://github.com/Byte-Kitsune/mago-symfony-wiring) and pass its complete dev service map:
 
@@ -110,9 +110,9 @@ Pass only reviewed shared/dev service files. A complete literal map proves confi
 
 ## Read the results
 
-Boundary violations appear as Analyzer issues such as `foreign-module-instance` and `forbidden-internal-access`. Graph permissions produce `scope-forbidden-entrypoint-method` errors or `scope-allowed-entrypoint-method` notes. The `graph-evidence` note contains the shortest modeled path, policy ID, target and `complete` flag. `scope-graph-incomplete` means a reached part could not be proven; do not interpret missing denials as a clean graph when it appears. Reachable unproven recursion is `recursive-cycle`; only a narrow guarded integer-decrement self-call is classified as `bounded-recursion`.
+Boundary violations appear as Analyzer issues such as `foreign-module-instance` and `forbidden-internal-access`. Graph permissions produce `scope-forbidden-entrypoint-method` errors or `scope-allowed-entrypoint-method` notes. The `graph-evidence` note contains the shortest modeled path, policy ID, target and `complete` flag. `scope-graph-incomplete` means a reached part could not be proven; do not interpret missing denials as a clean graph when it appears. Reachable unproven recursion is `recursive-cycle`; a narrow guarded integer self-call with a positive literal decrement is classified as `bounded-recursion`.
 
-When the graph is enabled and at least one PHP source is in its configured root, the Analyzer also emits one `analysis-attestation` note. Its bounded `extension-attestation` payload identifies the extension, version, `scope_graph` capability, source-file count and completeness. Consumers that require graph coverage should require this note; its absence must not count as a clean run.
+When the graph is enabled and at least one PHP source is in its configured root, the Analyzer also emits one `analysis-attestation` note. Its bounded `extension-attestation` payload identifies the extension, version, `scope_graph` capability, source-file count and completeness. Proofs exceeding the 4096-byte evidence limit are omitted and make the whole graph attestation incomplete. Consumers that require graph coverage should require this note; its absence must not count as a clean run.
 
 This is static evidence, not a runtime trace. It does not replace Mago's parse diagnostics or prove all PHP execution paths. Benchmark the full `mago analyze` run on your own project before setting a CI time budget.
 

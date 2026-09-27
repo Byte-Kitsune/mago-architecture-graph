@@ -22,6 +22,8 @@ use PhpParser\ParserFactory;
 /** Deterministic shortest paths through literal calls and proven service bindings. */
 final class GraphHook implements AfterAnalysisHook
 {
+    private const MAX_GRAPH_EVIDENCE_BYTES = 4096;
+
     /** @param array<string, string> $classBindings @param array<string, string> $serviceClassBindings */
     public function __construct(private readonly Policy $policy, private readonly array $classBindings = [], private readonly bool $serviceConfigurationComplete = true, private readonly ?DeclarationIndex $declarations = null, private readonly array $serviceClassBindings = []) {}
 
@@ -93,6 +95,14 @@ final class GraphHook implements AfterAnalysisHook
                             $consumedLookups[spl_object_id($localCall)] = true;
                             $evidence = count($localCalls) === 1 && $localCall->args === [] ? 'Symfony single-use local service ID ' : 'Symfony straight-line local service ID ';
                             $calls[] = self::edge($symbol, $targetClass . '::' . $localCall->name->toString(), $path, $source->path, $source->contents, $localCall, $evidence . $id . ' -> ' . $targetClass);
+                        }
+                    }
+                    $localConstructedCalls = self::straightLineConstructedCalls($method->stmts ?? [], $graph);
+                    if ($localConstructedCalls !== null) {
+                        [$targetClass, $localCalls] = $localConstructedCalls;
+                        foreach ($localCalls as $localCall) {
+                            $consumedLookups[spl_object_id($localCall)] = true;
+                            $calls[] = self::edge($symbol, $targetClass . '::' . $localCall->name->toString(), $path, $source->path, $source->contents, $localCall, 'straight-line local instance of ' . $targetClass);
                         }
                     }
                     foreach ($instanceCalls as $call) {
@@ -384,9 +394,18 @@ final class GraphHook implements AfterAnalysisHook
                 $this->report($context, Level::Error, 'recursive-cycle', $message, $first['file'], $first['position'], $first['position'] + 1);
             }
         }
+        $reportableProofs = [];
+        foreach ($proofs as [$scope, $permission, $proof, $target]) {
+            if (strlen(self::proofNote($scope, $permission, $proof, $target, false)) > self::MAX_GRAPH_EVIDENCE_BYTES) {
+                $first = $proof[0];
+                $unresolved[] = [$first['file'], $first['position'], 'Structured graph proof exceeds 4096 bytes'];
+                continue;
+            }
+            $reportableProofs[] = [$scope, $permission, $proof, $target];
+        }
         foreach ([...$unresolved, ...array_values($depthWarnings)] as [$file, $position, $reason]) $this->report($context, Level::Error, 'scope-graph-incomplete', 'Call graph coverage is incomplete: ' . $reason, $file, $position, $position + 1);
         $complete = $unresolved === [] && $depthWarnings === [] && !$cycleIncomplete;
-        foreach ($proofs as [$scope, $permission, $proof, $target]) $this->reportProof($context, $scope, $permission, $proof, $target, $complete);
+        foreach ($reportableProofs as [$scope, $permission, $proof, $target]) $this->reportProof($context, $scope, $permission, $proof, $target, $complete);
         if ($files !== []) {
             $first = reset($files)->getSourceFile();
             $attestation = [
@@ -407,14 +426,7 @@ final class GraphHook implements AfterAnalysisHook
     /** @param array<string, mixed> $permission @param list<array<string, mixed>> $proof @param array<string, mixed> $target */
     private function reportProof(AfterAnalysisContext $context, string $scope, array $permission, array $proof, array $target, bool $complete): void
     {
-        $edges = array_map(static fn ($edge) => array_intersect_key($edge, array_flip(['from', 'to', 'path', 'line', 'column', 'evidence'])), $proof);
-        $evidence = ['schema_version' => '1', 'scope' => $scope, 'target' => $target['symbol'], 'target_path' => $target['path'], 'target_line' => $target['line'], 'policy_id' => $permission['policy_id'], 'complete' => $complete, 'edges' => $edges];
-        $note = 'graph-evidence: ' . json_encode($evidence, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-        if (strlen($note) > 4096) {
-            $first = $proof[0];
-            $this->report($context, Level::Error, 'scope-graph-incomplete', 'Structured graph proof exceeds 4096 bytes', $first['file'], $first['position'], $first['end']);
-            return;
-        }
+        $note = self::proofNote($scope, $permission, $proof, $target, $complete);
         $first = $proof[0];
         $decision = $permission['decision'];
         $message = sprintf('Scope %s reaches %s %s. Policy %s: %s.', $scope, $decision === 'deny' ? 'prohibited' : 'allowed', $target['symbol'], $permission['policy_id'], $permission['rationale']);
@@ -433,6 +445,14 @@ final class GraphHook implements AfterAnalysisHook
             $issue = Issue::at($message . sprintf(' Verified graph participant %d/%d.', ++$index, $total), new SourceLocation($file, new Span($start, $end)))->withNote($note);
             $context->report(Level::Note, 'scope-allowed-entrypoint-method', $issue);
         }
+    }
+
+    /** @param array<string, mixed> $permission @param list<array<string, mixed>> $proof @param array<string, mixed> $target */
+    private static function proofNote(string $scope, array $permission, array $proof, array $target, bool $complete): string
+    {
+        $edges = array_map(static fn ($edge) => array_intersect_key($edge, array_flip(['from', 'to', 'path', 'line', 'column', 'evidence'])), $proof);
+        $evidence = ['schema_version' => '1', 'scope' => $scope, 'target' => $target['symbol'], 'target_path' => $target['path'], 'target_line' => $target['line'], 'policy_id' => $permission['policy_id'], 'complete' => $complete, 'edges' => $edges];
+        return 'graph-evidence: ' . json_encode($evidence, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 
     private function report(AfterAnalysisContext $context, Level $level, string $code, string $message, string $file, int $start, int $end): void
@@ -497,6 +517,35 @@ final class GraphHook implements AfterAnalysisHook
         return [$assignment->expr, $calls, $target[0], $target[1]];
     }
 
+    /**
+     * A literal construction assigns an exact runtime class. The local cannot
+     * be reassigned or escape through the supported straight-line statements.
+     *
+     * @param list<Node\Stmt> $statements
+     * @return array{string, list<Node\Expr\MethodCall>}|null
+     */
+    private static function straightLineConstructedCalls(array $statements, GraphPolicy $graph): ?array
+    {
+        if (count($statements) < 2 || count($statements) > 32 || !$statements[0] instanceof Node\Stmt\Expression) return null;
+        $assignment = $statements[0]->expr;
+        if (!$assignment instanceof Node\Expr\Assign || !$assignment->var instanceof Node\Expr\Variable || !is_string($assignment->var->name) || $assignment->var->name === 'this') return null;
+        $construction = $assignment->expr;
+        if (!$construction instanceof Node\Expr\New_ || !$construction->class instanceof Node\Name || in_array(strtolower($construction->class->toString()), ['self', 'static', 'parent'], true)) return null;
+        $targetClass = ($construction->class->getAttribute('resolvedName') ?? $construction->class)->toString();
+        if (!$graph->withinRoot($targetClass)) return null;
+        $calls = [];
+        foreach (array_slice($statements, 1) as $statement) {
+            if (!$statement instanceof Node\Stmt\Expression || !$statement->expr instanceof Node\Expr\MethodCall) return null;
+            $call = $statement->expr;
+            if (!$call->name instanceof Node\Identifier || $call->isFirstClassCallable() || !$call->var instanceof Node\Expr\Variable || $call->var->name !== $assignment->var->name) return null;
+            foreach ($call->args as $argument) {
+                if ($argument->unpack || $argument->byRef || !self::simpleArgument($argument->value, $assignment->var->name)) return null;
+            }
+            $calls[] = $call;
+        }
+        return [$targetClass, $calls];
+    }
+
     private static function simpleArgument(Node\Expr $value, string $local): bool
     {
         if ($value instanceof Node\Scalar\String_ || $value instanceof Node\Scalar\LNumber || $value instanceof Node\Scalar\DNumber || $value instanceof Node\Expr\ConstFetch) return true;
@@ -507,6 +556,9 @@ final class GraphHook implements AfterAnalysisHook
     /** @param array<string, array{string, string, string}> $properties @return array{string, string}|null */
     private static function receiverBinding(Node\Expr $receiver, string $method, Node\Stmt\Class_ $class, string $className, array $properties): ?array
     {
+        if ($receiver instanceof Node\Expr\New_ && $receiver->class instanceof Node\Name && !in_array(strtolower($receiver->class->toString()), ['self', 'static', 'parent'], true)) {
+            return [($receiver->class->getAttribute('resolvedName') ?? $receiver->class)->toString(), 'literal temporary instance'];
+        }
         if ($receiver instanceof Node\Expr\Variable && $receiver->name === 'this') {
             if ($class->isFinal()) return [$className, 'final-class this call'];
             $declared = $class->getMethod($method);

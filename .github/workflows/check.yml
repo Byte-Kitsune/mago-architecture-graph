@@ -10,5 +10,5 @@ jobs:
           php-version: '8.5'
           tools: composer:v2
       - run: composer install --no-interaction --prefer-dist
-      - run: find src tests -name '*.php' -exec php -l {} \;
+      - run: find src -name '*.php' -print0 | xargs -0 -n1 php -l
       - run: sh tests/smoke.sh

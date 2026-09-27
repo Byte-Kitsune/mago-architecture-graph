@@ -1,0 +1,41 @@
+{
+  "version": "1",
+  "source_root": "src",
+  "namespace_root": "App",
+  "modules": [
+    {
+      "id": "all",
+      "path_pattern": "src/",
+      "namespace_prefix": "App\\",
+      "layer": "application",
+      "allowed_target_layers": [],
+      "entrypoint_suffix": ""
+    }
+  ],
+  "scope_graph": {
+    "version": "1",
+    "enabled": true,
+    "mode": "transitive",
+    "max_depth": 8,
+    "source_root": "src",
+    "namespace_root": "App",
+    "scopes": [
+      {
+        "id": "entry",
+        "path_prefix": "src/Scope/",
+        "namespace_prefix": "App\\Scope\\"
+      }
+    ],
+    "method_permissions": [
+      {
+        "scope_id": "entry",
+        "target_type": "App\\Gateway",
+        "method": "expensive",
+        "decision": "deny",
+        "policy_id": "receiver",
+        "rationale": "Fixture exact receivers"
+      }
+    ],
+    "exclusions": []
+  }
+}

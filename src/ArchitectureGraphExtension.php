@@ -9,7 +9,7 @@ use Mago\Sdk\Extension;
 
 final class ArchitectureGraphExtension
 {
-    public const VERSION = '0.1.0-beta.13';
+    public const VERSION = '0.1.0-beta.14';
     /**
      * The policy and literal service bindings are trusted operator inputs, never selected by analyzed PHP.
      * @param array<string, string> $classBindings Type or "Type $target" to concrete class.

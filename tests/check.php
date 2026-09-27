@@ -14,7 +14,7 @@ use PhpParser\ParserFactory;
 use PhpParser\NodeTraverser;
 use PhpParser\NodeVisitor\NameResolver;
 
-require dirname(__DIR__) . '/vendor/autoload.php';
+require __DIR__ . '/source-autoload.php';
 
 $policy = new Policy(__DIR__ . '/corpus', __DIR__ . '/corpus/policy.json');
 $sourcePath = 'src/Area/Alpha/Controller/OrderController.php';
@@ -50,6 +50,8 @@ $parser = (new ParserFactory())->createForNewestSupportedVersion();
 $finder = new NodeFinder();
 foreach ([
     'if ($n <= 0) return; self::walk($n - 1);' => true,
+    'if ($n <= 0) return; self::walk($n - 2);' => true,
+    'if ($n <= 0) return; self::walk($n - 0);' => false,
     'if ($n === 0) return; self::walk($n - 1);' => false,
     'if ($n <= 0) return; self::walk($n);' => false,
     'if ($n <= 0) return; self::walk($n - 1); self::walk($n - 1);' => false,
