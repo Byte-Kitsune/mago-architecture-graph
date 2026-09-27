@@ -15,6 +15,7 @@
     "scopes":[{"id":"entry","path_prefix":"src/CompleteEntry.php","namespace_prefix":"App\\"}],
     "method_permissions":[
       {"scope_id":"entry","target_type":"App\\Gateway","method":"expensive","decision":"deny","policy_id":"instance","rationale":"Fixture call"},
+      {"scope_id":"entry","target_type":"App\\Gateway","method":"expensiveWith","decision":"deny","policy_id":"instance-argument","rationale":"Fixture call"},
       {"scope_id":"entry","target_type":"App\\Gateway","method":"staticExpensive","decision":"deny","policy_id":"static","rationale":"Fixture call"}
     ],
     "exclusions":[]

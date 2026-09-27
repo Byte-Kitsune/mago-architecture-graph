@@ -93,6 +93,19 @@ class Entry
         $service->expensive();
     }
 
+    public function branchedService(bool $replace): void
+    {
+        $service = $this->container->get('gateway.service');
+        if ($replace) $service = new Gateway();
+        $service->expensive();
+    }
+
+    public function escapedArgument(): void
+    {
+        $service = $this->container->get('gateway.service');
+        $service->accept($service);
+    }
+
     public function dynamicConstruction(string $name): void
     {
         new $name();
