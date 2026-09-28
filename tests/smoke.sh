@@ -24,7 +24,7 @@ if (count($attestations)!==1) throw new RuntimeException("Expected one architect
 $note=$attestations[0]["notes"][0]??"";
 if (!str_starts_with($note,"extension-attestation: ")) throw new RuntimeException("Missing extension attestation payload.");
 $attestation=json_decode(substr($note,strlen("extension-attestation: ")),true,512,JSON_THROW_ON_ERROR);
-if (($attestation["schema_version"]??null)!=="1" || ($attestation["extension"]??null)!=="byte-kitsune/architecture-graph" || ($attestation["version"]??null)!=="0.1.0-beta.14" || ($attestation["capability"]??null)!=="scope_graph" || ($attestation["complete"]??null)!==false || ($attestation["source_files"]??0)<1) throw new RuntimeException("Invalid architecture analysis attestation.");
+if (($attestation["schema_version"]??null)!=="1" || ($attestation["extension"]??null)!=="byte-kitsune/architecture-graph" || ($attestation["version"]??null)!=="0.1.0-beta.15" || ($attestation["capability"]??null)!=="scope_graph" || ($attestation["complete"]??null)!==false || ($attestation["source_files"]??0)<1) throw new RuntimeException("Invalid architecture analysis attestation.");
 foreach (["scope-forbidden-entrypoint-method"=>1,"scope-allowed-entrypoint-method"=>3,"scope-graph-incomplete"=>1] as $suffix=>$expected) {
     $matches=array_values(array_filter($issues,fn($i)=>$i["code"]==="byte-kitsune/architecture-graph/".$suffix));
     if (count($matches)!==$expected) { fwrite(STDERR,"Expected $expected $suffix, got ".count($matches)."\n"); exit(1); }
@@ -259,4 +259,26 @@ $note=$attestations[0]["notes"][0]??"";
 $attestation=json_decode(substr($note,strlen("extension-attestation: ")),true,512,JSON_THROW_ON_ERROR);
 if (($attestation["complete"]??null)!==true) throw new RuntimeException("Exact receiver graph was not attested complete.");
 echo "Complete local receiver corpus passed\n";
+' "$report"
+cd ../service-constructor-corpus
+set +e
+../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+status=$?
+set -e
+[ "$status" -eq 1 ]
+php -r '
+$issues=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["issues"];
+$prefix="byte-kitsune/architecture-graph/";
+$denied=array_values(array_filter($issues,fn($issue)=>$issue["code"]===$prefix."scope-forbidden-entrypoint-method"));
+if (count($denied)!==2 || count(array_filter($issues,fn($issue)=>$issue["code"]===$prefix."scope-graph-incomplete"))!==0) throw new RuntimeException("Service variants merged or lost coverage.");
+$sources=[];
+foreach ($denied as $issue) {
+    $proof=json_decode(substr($issue["notes"][0],strlen("graph-evidence: ")),true,512,JSON_THROW_ON_ERROR);
+    if (($proof["complete"]??null)!==true || count($proof["edges"]??[])!==3) throw new RuntimeException("Service constructor proof is incomplete.");
+    $sources[]=$proof["edges"][0]["from"];
+    if (!str_contains($proof["edges"][2]["evidence"],"processor.danger argument 0 -> danger.port")) throw new RuntimeException("Wrong constructor service selected.");
+}
+sort($sources);
+if ($sources!==["App\\Entry::alias","App\\Entry::danger"]) throw new RuntimeException("Safe service reached the denied port.");
+echo "Per-service constructor graph corpus passed\n";
 ' "$report"

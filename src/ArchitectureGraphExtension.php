@@ -9,13 +9,14 @@ use Mago\Sdk\Extension;
 
 final class ArchitectureGraphExtension
 {
-    public const VERSION = '0.1.0-beta.14';
+    public const VERSION = '0.1.0-beta.15';
     /**
      * The policy and literal service bindings are trusted operator inputs, never selected by analyzed PHP.
      * @param array<string, string> $classBindings Type or "Type $target" to concrete class.
      * @param array<string, string> $serviceClassBindings Exact service ID to declared class.
+     * @param array<string, array<int, ?string>> $serviceConstructorBindings Service ID to positional target service IDs; null is explicitly unresolved.
      */
-    public static function create(string $projectRoot, string $policyPath, array $classBindings = [], bool $serviceConfigurationComplete = true, array $serviceClassBindings = []): Extension
+    public static function create(string $projectRoot, string $policyPath, array $classBindings = [], bool $serviceConfigurationComplete = true, array $serviceClassBindings = [], array $serviceConstructorBindings = []): Extension
     {
         $typeBindings = [];
         foreach ($classBindings as $type => $class) {
@@ -39,11 +40,21 @@ final class ArchitectureGraphExtension
             }
             $serviceClassBindings[$id] = ltrim($class, '\\');
         }
+        if (count($serviceConstructorBindings) > 32768) throw new \InvalidArgumentException('Architecture constructor bindings exceed 32768 services.');
+        $positionsTotal = 0;
+        foreach ($serviceConstructorBindings as $id => $positions) {
+            if (!is_string($id) || !isset($serviceClassBindings[$id]) || !is_array($positions) || count($positions) > 128) throw new \InvalidArgumentException('Invalid architecture constructor service.');
+            foreach ($positions as $position => $target) {
+                if (!is_int($position) || $position < 0 || $position >= 128 || ($target !== null && (!is_string($target) || !isset($serviceClassBindings[$target])))) throw new \InvalidArgumentException('Invalid architecture constructor target.');
+                if (++$positionsTotal > 262144) throw new \InvalidArgumentException('Architecture constructor bindings exceed work limit.');
+            }
+            ksort($serviceConstructorBindings[$id], SORT_NUMERIC);
+        }
         return new Extension(
             identifier: 'byte-kitsune/architecture-graph',
             name: 'Path-aware architecture graph',
             version: self::VERSION,
-            analyzerPlugins: [new ArchitecturePlugin(new Policy($projectRoot, $policyPath), $typeBindings, $serviceConfigurationComplete, $serviceClassBindings)],
+            analyzerPlugins: [new ArchitecturePlugin(new Policy($projectRoot, $policyPath), $typeBindings, $serviceConfigurationComplete, $serviceClassBindings, $serviceConstructorBindings)],
         );
     }
 }

@@ -96,6 +96,27 @@ foreach ([
 }
 echo "Constructor property checks passed\n";
 
+$serviceHook = new GraphHook(new Policy(__DIR__ . '/alias-corpus', __DIR__ . '/alias-corpus/policy.json'), [], true, null, [
+    'processor.safe' => 'App\\Processor',
+    'processor.danger' => 'App\\Processor',
+    'safe.port' => 'App\\SafePort',
+    'danger.port' => 'App\\DangerPort',
+], [
+    'processor.safe' => [0 => 'safe.port'],
+    'processor.danger' => [0 => 'danger.port'],
+]);
+$parsed = (new NodeTraverser(new NameResolver()))->traverse($parser->parse('<?php namespace App; final class Processor { public function __construct(private Port $port) {} }'));
+$class = $finder->findFirstInstanceOf($parsed, Class_::class);
+if (!$class instanceof Class_) throw new RuntimeException('Service constructor fixture missing.');
+$safe = $bindings->invoke($serviceHook, $class, $finder, 'processor.safe')['port'] ?? null;
+$danger = $bindings->invoke($serviceHook, $class, $finder, 'processor.danger')['port'] ?? null;
+$unbound = $bindings->invoke($serviceHook, $class, $finder)['port'] ?? null;
+if ($safe === null || $safe[0] !== 'App\\SafePort' || $safe[3] !== 'safe.port'
+    || $danger === null || $danger[0] !== 'App\\DangerPort' || $danger[3] !== 'danger.port' || $unbound !== null) {
+    throw new RuntimeException('Service constructor variants were conflated.');
+}
+echo "Service constructor binding checks passed\n";
+
 foreach ([
     'private readonly Port $port; public function __construct(Port $port) { $this->port = $port; }' => true,
     'public function __construct(private readonly Port $port) {}' => true,

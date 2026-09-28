@@ -12,7 +12,7 @@ See the [runnable example](examples/README.md) for a controller that crosses a h
 Requires PHP 8.2+ and Mago 1.50. Pin the beta in your project:
 
 ```sh
-composer require --dev carthage-software/mago:1.50.0 byte-kitsune/mago-architecture-graph:0.1.0-beta.14
+composer require --dev carthage-software/mago:1.50.0 byte-kitsune/mago-architecture-graph:0.1.0-beta.15
 ```
 
 Add an extension host to `mago.toml` (keep your normal `[source]` paths configured):
@@ -112,6 +112,27 @@ $extension = ArchitectureGraphExtension::create(
 ```
 
 Pass only reviewed shared/dev service files. A complete literal map proves configured IDs and aliases, not the runtime container or decorators.
+
+When one class has multiple service definitions with different constructor arguments, pass the positional bindings from a revision-matched **compiled dev container reference** as the sixth argument. Map each owner service ID to constructor positions and their target service IDs; include aliases and an empty array for a same-class service with no explicit arguments. Use `null` for an argument whose target cannot be proved. For example:
+
+```php
+$extension = ArchitectureGraphExtension::create(
+    $root,
+    $root . '/.mago/architecture-policy.json',
+    serviceClassBindings: [
+        'processor.safe' => App\Processor::class,
+        'processor.danger' => App\Processor::class,
+        'safe.port' => App\SafePort::class,
+        'danger.port' => App\DangerPort::class,
+    ],
+    serviceConstructorBindings: [
+        'processor.safe' => [0 => 'safe.port'],
+        'processor.danger' => [0 => 'danger.port'],
+    ],
+);
+```
+
+The graph keeps those two `Processor` instances separate through private `$this` calls and constructor-injected properties. Exact container lookups retain the selected service ID; an unbound construction does not borrow either service's constructor proof. The [service constructor fixture](tests/service-constructor-corpus) exercises this case. A compiled reference is needed for runtime service parity: parsing service YAML or PHP cannot establish all effective aliases, environment overrides and argument values. The caller must regenerate and verify that reference for the analyzed revision; this extension does not compile or execute the application container.
 
 ## Read the results
 

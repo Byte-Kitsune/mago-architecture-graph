@@ -23,9 +23,17 @@ use PhpParser\ParserFactory;
 final class GraphHook implements AfterAnalysisHook
 {
     private const MAX_GRAPH_EVIDENCE_BYTES = 4096;
+    /** @var array<string, array<int, true>> */
+    private array $serviceBoundPositions = [];
 
-    /** @param array<string, string> $classBindings @param array<string, string> $serviceClassBindings */
-    public function __construct(private readonly Policy $policy, private readonly array $classBindings = [], private readonly bool $serviceConfigurationComplete = true, private readonly ?DeclarationIndex $declarations = null, private readonly array $serviceClassBindings = []) {}
+    /** @param array<string, string> $classBindings @param array<string, string> $serviceClassBindings @param array<string, array<int, ?string>> $serviceConstructorBindings */
+    public function __construct(private readonly Policy $policy, private readonly array $classBindings = [], private readonly bool $serviceConfigurationComplete = true, private readonly ?DeclarationIndex $declarations = null, private readonly array $serviceClassBindings = [], private readonly array $serviceConstructorBindings = [])
+    {
+        foreach ($serviceConstructorBindings as $id => $positions) {
+            $class = strtolower($serviceClassBindings[$id]);
+            foreach ($positions as $position => $_target) $this->serviceBoundPositions[$class][$position] = true;
+        }
+    }
 
     public function afterAnalysis(AfterAnalysisContext $context): void
     {
@@ -47,7 +55,18 @@ final class GraphHook implements AfterAnalysisHook
         $aliasesByClass = [];
         $functionCoverage = [];
         $constructorTargets = [];
-        $indexFile = function (string $path) use (&$nodes, &$indexed, &$duplicates, &$unresolved, &$aliasesByClass, &$functionCoverage, &$constructorTargets, $files, $context, $parser, $finder, $graph): void {
+        $serviceVariants = [];
+        $canonicalService = [];
+        foreach ($this->serviceConstructorBindings as $id => $positions) {
+            $class = strtolower($this->serviceClassBindings[$id]);
+            $signature = json_encode($positions, JSON_THROW_ON_ERROR);
+            $serviceVariants[$class][$signature] ??= $id;
+            $canonicalService[$id] = $serviceVariants[$class][$signature];
+        }
+        foreach ($serviceVariants as $class => $variants) {
+            if (count($variants) > 64) throw new \InvalidArgumentException("More than 64 constructor variants for {$class}.");
+        }
+        $indexFile = function (string $path) use (&$nodes, &$indexed, &$duplicates, &$unresolved, &$aliasesByClass, &$functionCoverage, &$constructorTargets, $serviceVariants, $files, $context, $parser, $finder, $graph): void {
             if (isset($indexed[$path])) return;
             $indexed[$path] = true;
             $context->cancellation->throwIfCancelled();
@@ -64,126 +83,129 @@ final class GraphHook implements AfterAnalysisHook
                 $className = $class->namespacedName->toString();
                 if ($this->declarations?->isDuplicate($className)) continue;
                 $aliasesByClass[strtolower($className)] = self::asAlias($class);
-                $properties = $this->injectedProperties($class, $finder);
-                foreach ($class->getMethods() as $method) {
-                    $symbol = $className . '::' . $method->name->toString();
-                    $key = strtolower($symbol);
-                    if (isset($nodes[$key]) || isset($duplicates[$key])) {
-                        $unresolved[] = [$source->path, $method->getStartFilePos(), "Duplicate method symbol {$symbol}"];
-                        unset($nodes[$key]);
-                        $duplicates[$key] = true;
-                        continue;
-                    }
-                    $calls = [];
-                    $methodUnresolved = [];
-                    [$staticCalls, $instanceCalls, $functionCalls, $creations, $indirect] = CallCollector::collect($method->stmts ?? []);
-                    foreach ($indirect as $call) $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Nested or indirect dispatch in {$symbol} is not modeled"];
-                    foreach ($staticCalls as $call) {
-                        if (!$call->class instanceof Node\Name || !$call->name instanceof Node\Identifier || in_array(strtolower($call->class->toString()), ['static', 'parent'], true)) {
-                            $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Dynamic or relative static call in {$symbol}"];
+                $variants = [null, ...array_values($serviceVariants[strtolower($className)] ?? [])];
+                foreach ($variants as $serviceId) {
+                    $properties = $this->injectedProperties($class, $finder, $serviceId);
+                    foreach ($class->getMethods() as $method) {
+                        $symbol = $className . '::' . $method->name->toString();
+                        $key = self::nodeKey($symbol, $serviceId);
+                        if (isset($nodes[$key]) || isset($duplicates[$key])) {
+                            $unresolved[] = [$source->path, $method->getStartFilePos(), "Duplicate method symbol {$symbol}"];
+                            unset($nodes[$key]);
+                            $duplicates[$key] = true;
                             continue;
                         }
-                        $targetClass = strtolower($call->class->toString()) === 'self' ? $className : ($call->class->getAttribute('resolvedName') ?? $call->class)->toString();
-                        $calls[] = self::edge($symbol, $targetClass . '::' . $call->name->toString(), $path, $source->path, $source->contents, $call, 'explicit static call');
-                    }
-                    $consumedLookups = [];
-                    $localServiceCalls = $this->straightLineContainerCalls($method->stmts ?? [], $properties, $graph);
-                    if ($localServiceCalls !== null) {
-                        [$lookup, $localCalls, $targetClass, $id] = $localServiceCalls;
-                        $consumedLookups[spl_object_id($lookup)] = true;
-                        foreach ($localCalls as $localCall) {
-                            $consumedLookups[spl_object_id($localCall)] = true;
-                            $evidence = count($localCalls) === 1 && $localCall->args === [] ? 'Symfony single-use local service ID ' : 'Symfony straight-line local service ID ';
-                            $calls[] = self::edge($symbol, $targetClass . '::' . $localCall->name->toString(), $path, $source->path, $source->contents, $localCall, $evidence . $id . ' -> ' . $targetClass);
-                        }
-                    }
-                    $localConstructedCalls = self::straightLineConstructedCalls($method->stmts ?? [], $graph);
-                    if ($localConstructedCalls !== null) {
-                        [$targetClass, $localCalls] = $localConstructedCalls;
-                        foreach ($localCalls as $localCall) {
-                            $consumedLookups[spl_object_id($localCall)] = true;
-                            $calls[] = self::edge($symbol, $targetClass . '::' . $localCall->name->toString(), $path, $source->path, $source->contents, $localCall, 'straight-line local instance of ' . $targetClass);
-                        }
-                    }
-                    foreach ($instanceCalls as $call) {
-                        if (isset($consumedLookups[spl_object_id($call)])) continue;
-                        if (!$call->name instanceof Node\Identifier) {
-                            $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Dynamic instance method call in {$symbol}"];
-                            continue;
-                        }
-                        if ($call->var instanceof Node\Expr\MethodCall && self::isContainerGet($call->var, $properties)) {
-                            $lookup = $call->var;
-                            $consumedLookups[spl_object_id($lookup)] = true;
-                            $target = $this->containerTarget($lookup, $graph);
-                            if ($target === null) {
-                                $methodUnresolved[] = [$source->path, $lookup->getStartFilePos(), "Unproven Symfony container lookup in {$symbol}"];
+                        $calls = [];
+                        $methodUnresolved = [];
+                        [$staticCalls, $instanceCalls, $functionCalls, $creations, $indirect] = CallCollector::collect($method->stmts ?? []);
+                        foreach ($indirect as $call) $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Nested or indirect dispatch in {$symbol} is not modeled"];
+                        foreach ($staticCalls as $call) {
+                            if (!$call->class instanceof Node\Name || !$call->name instanceof Node\Identifier || in_array(strtolower($call->class->toString()), ['static', 'parent'], true)) {
+                                $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Dynamic or relative static call in {$symbol}"];
                                 continue;
                             }
-                            [$targetClass, $id] = $target;
-                            $calls[] = self::edge($symbol, $targetClass . '::' . $call->name->toString(), $path, $source->path, $source->contents, $call, 'Symfony literal service ID ' . $id . ' -> ' . $targetClass);
-                            continue;
+                            $targetClass = strtolower($call->class->toString()) === 'self' ? $className : ($call->class->getAttribute('resolvedName') ?? $call->class)->toString();
+                            $calls[] = self::edge($symbol, $targetClass . '::' . $call->name->toString(), $path, $source->path, $source->contents, $call, 'explicit static call', strtolower($call->class->toString()) === 'self' ? $serviceId : null);
                         }
-                        if (self::isContainerGet($call, $properties)) {
-                            $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Symfony container lookup result escapes immediate call in {$symbol}"];
-                            continue;
-                        }
-                        $binding = self::receiverBinding($call->var, $call->name->toString(), $class, $className, $properties);
-                        if ($binding === null) {
-                            $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Unresolved instance receiver in {$symbol}"];
-                            continue;
-                        }
-                        [$targetClass, $evidence] = $binding;
-                        $calls[] = self::edge($symbol, $targetClass . '::' . $call->name->toString(), $path, $source->path, $source->contents, $call, $evidence);
-                    }
-                    foreach ($creations as $creation) {
-                        if (!$creation->class instanceof Node\Name || in_array(strtolower($creation->class->toString()), ['static', 'parent'], true)) {
-                            $methodUnresolved[] = [$source->path, $creation->getStartFilePos(), "Dynamic or relative construction in {$symbol}"];
-                            continue;
-                        }
-                        $targetClass = strtolower($creation->class->toString()) === 'self' ? $className : ($creation->class->getAttribute('resolvedName') ?? $creation->class)->toString();
-                        if (!$graph->withinRoot($targetClass)) continue;
-                        $target = self::constructorTarget($targetClass, $context, $constructorTargets);
-                        if ($target === null || (is_string($target) && !$graph->withinRoot(explode('::', $target, 2)[0]))) {
-                            $methodUnresolved[] = [$source->path, $creation->getStartFilePos(), "Constructor target is outside the modeled source graph: {$targetClass}"];
-                            continue;
-                        }
-                        if ($target !== false) $calls[] = self::edge($symbol, $target, $path, $source->path, $source->contents, $creation, 'literal constructor call');
-                    }
-                    foreach ($functionCalls as $call) {
-                        if ($call->isFirstClassCallable()) {
-                            $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "First-class function callable in {$symbol} is not an invocation"];
-                            continue;
-                        }
-                        if (!$call->name instanceof Node\Name) {
-                            $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Dynamic function invocation in {$symbol}"];
-                            continue;
-                        }
-                        $function = strtolower(ltrim($call->name->toString(), '\\'));
-                        if (!in_array($function, ['call_user_func', 'call_user_func_array', 'forward_static_call', 'forward_static_call_array'], true)) {
-                            if (in_array($function, ['array_map', 'array_filter', 'array_walk', 'array_walk_recursive', 'usort', 'uasort', 'uksort', 'preg_replace_callback', 'register_shutdown_function', 'set_error_handler'], true)) {
-                                $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Callback-dispatching function {$function} in {$symbol} is not modeled"];
-                            } elseif (($target = $this->functionTarget($call->name, self::namespaceOf($className), $graph, $context, $functionCoverage)) === null) {
-                                $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Named function call {$function} in {$symbol} is not modeled"];
-                            } elseif ($target !== false) {
-                                $calls[] = self::edge($symbol, 'function:' . $target, $path, $source->path, $source->contents, $call, 'project function call');
+                        $consumedLookups = [];
+                        $localServiceCalls = $this->straightLineContainerCalls($method->stmts ?? [], $properties, $graph);
+                        if ($localServiceCalls !== null) {
+                            [$lookup, $localCalls, $targetClass, $id] = $localServiceCalls;
+                            $consumedLookups[spl_object_id($lookup)] = true;
+                            foreach ($localCalls as $localCall) {
+                                $consumedLookups[spl_object_id($localCall)] = true;
+                                $evidence = count($localCalls) === 1 && $localCall->args === [] ? 'Symfony single-use local service ID ' : 'Symfony straight-line local service ID ';
+                                $calls[] = self::edge($symbol, $targetClass . '::' . $localCall->name->toString(), $path, $source->path, $source->contents, $localCall, $evidence . $id . ' -> ' . $targetClass, $id);
                             }
-                            continue;
                         }
-                        // A namespaced function can shadow a PHP builtin. Only an
-                        // explicit global call proves the dispatch semantics.
-                        if (!$call->name->isFullyQualified() || $call->args === [] || $call->args[0]->name !== null || $call->args[0]->unpack) {
-                            $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Unproven callback invocation in {$symbol}"];
-                            continue;
+                        $localConstructedCalls = self::straightLineConstructedCalls($method->stmts ?? [], $graph);
+                        if ($localConstructedCalls !== null) {
+                            [$targetClass, $localCalls] = $localConstructedCalls;
+                            foreach ($localCalls as $localCall) {
+                                $consumedLookups[spl_object_id($localCall)] = true;
+                                $calls[] = self::edge($symbol, $targetClass . '::' . $localCall->name->toString(), $path, $source->path, $source->contents, $localCall, 'straight-line local instance of ' . $targetClass);
+                            }
                         }
-                        $target = self::callbackTarget($call->args[0]->value, $class, $className, $properties);
-                        if ($target === null) {
-                            $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Dynamic callback target in {$symbol}"];
-                            continue;
+                        foreach ($instanceCalls as $call) {
+                            if (isset($consumedLookups[spl_object_id($call)])) continue;
+                            if (!$call->name instanceof Node\Identifier) {
+                                $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Dynamic instance method call in {$symbol}"];
+                                continue;
+                            }
+                            if ($call->var instanceof Node\Expr\MethodCall && self::isContainerGet($call->var, $properties)) {
+                                $lookup = $call->var;
+                                $consumedLookups[spl_object_id($lookup)] = true;
+                                $target = $this->containerTarget($lookup, $graph);
+                                if ($target === null) {
+                                    $methodUnresolved[] = [$source->path, $lookup->getStartFilePos(), "Unproven Symfony container lookup in {$symbol}"];
+                                    continue;
+                                }
+                                [$targetClass, $id] = $target;
+                                $calls[] = self::edge($symbol, $targetClass . '::' . $call->name->toString(), $path, $source->path, $source->contents, $call, 'Symfony literal service ID ' . $id . ' -> ' . $targetClass, $id);
+                                continue;
+                            }
+                            if (self::isContainerGet($call, $properties)) {
+                                $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Symfony container lookup result escapes immediate call in {$symbol}"];
+                                continue;
+                            }
+                            $binding = self::receiverBinding($call->var, $call->name->toString(), $class, $className, $properties);
+                            if ($binding === null) {
+                                $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Unresolved instance receiver in {$symbol}"];
+                                continue;
+                            }
+                            [$targetClass, $evidence, $targetService] = $binding;
+                            $calls[] = self::edge($symbol, $targetClass . '::' . $call->name->toString(), $path, $source->path, $source->contents, $call, $evidence, $targetService ?? ($call->var instanceof Node\Expr\Variable && $call->var->name === 'this' ? $serviceId : null));
                         }
-                        [$targetSymbol, $evidence] = $target;
-                        $calls[] = self::edge($symbol, $targetSymbol, $path, $source->path, $source->contents, $call, $evidence);
+                        foreach ($creations as $creation) {
+                            if (!$creation->class instanceof Node\Name || in_array(strtolower($creation->class->toString()), ['static', 'parent'], true)) {
+                                $methodUnresolved[] = [$source->path, $creation->getStartFilePos(), "Dynamic or relative construction in {$symbol}"];
+                                continue;
+                            }
+                            $targetClass = strtolower($creation->class->toString()) === 'self' ? $className : ($creation->class->getAttribute('resolvedName') ?? $creation->class)->toString();
+                            if (!$graph->withinRoot($targetClass)) continue;
+                            $target = self::constructorTarget($targetClass, $context, $constructorTargets);
+                            if ($target === null || (is_string($target) && !$graph->withinRoot(explode('::', $target, 2)[0]))) {
+                                $methodUnresolved[] = [$source->path, $creation->getStartFilePos(), "Constructor target is outside the modeled source graph: {$targetClass}"];
+                                continue;
+                            }
+                            if ($target !== false) $calls[] = self::edge($symbol, $target, $path, $source->path, $source->contents, $creation, 'literal constructor call');
+                        }
+                        foreach ($functionCalls as $call) {
+                            if ($call->isFirstClassCallable()) {
+                                $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "First-class function callable in {$symbol} is not an invocation"];
+                                continue;
+                            }
+                            if (!$call->name instanceof Node\Name) {
+                                $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Dynamic function invocation in {$symbol}"];
+                                continue;
+                            }
+                            $function = strtolower(ltrim($call->name->toString(), '\\'));
+                            if (!in_array($function, ['call_user_func', 'call_user_func_array', 'forward_static_call', 'forward_static_call_array'], true)) {
+                                if (in_array($function, ['array_map', 'array_filter', 'array_walk', 'array_walk_recursive', 'usort', 'uasort', 'uksort', 'preg_replace_callback', 'register_shutdown_function', 'set_error_handler'], true)) {
+                                    $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Callback-dispatching function {$function} in {$symbol} is not modeled"];
+                                } elseif (($target = $this->functionTarget($call->name, self::namespaceOf($className), $graph, $context, $functionCoverage)) === null) {
+                                    $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Named function call {$function} in {$symbol} is not modeled"];
+                                } elseif ($target !== false) {
+                                    $calls[] = self::edge($symbol, 'function:' . $target, $path, $source->path, $source->contents, $call, 'project function call');
+                                }
+                                continue;
+                            }
+                            // A namespaced function can shadow a PHP builtin. Only an
+                            // explicit global call proves the dispatch semantics.
+                            if (!$call->name->isFullyQualified() || $call->args === [] || $call->args[0]->name !== null || $call->args[0]->unpack) {
+                                $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Unproven callback invocation in {$symbol}"];
+                                continue;
+                            }
+                            $target = self::callbackTarget($call->args[0]->value, $class, $className, $properties);
+                            if ($target === null) {
+                                $methodUnresolved[] = [$source->path, $call->getStartFilePos(), "Dynamic callback target in {$symbol}"];
+                                continue;
+                            }
+                            [$targetSymbol, $evidence, $targetService] = $target;
+                            $calls[] = self::edge($symbol, $targetSymbol, $path, $source->path, $source->contents, $call, $evidence, $targetService ?? (str_contains($evidence, 'this') ? $serviceId : null));
+                        }
+                        $nodes[$key] = ['symbol' => $symbol, 'class' => $className, 'service_id' => $serviceId, 'path' => $path, 'file' => $source->path, 'line' => $method->getStartLine(), 'position' => $method->getStartFilePos(), 'static' => $method->isStatic(), 'calls' => $calls, 'unresolved' => $methodUnresolved, 'bounded_recursion' => RecursionProof::bounded($class, $method, $className)];
                     }
-                    $nodes[$key] = ['symbol' => $symbol, 'class' => $className, 'path' => $path, 'file' => $source->path, 'line' => $method->getStartLine(), 'position' => $method->getStartFilePos(), 'static' => $method->isStatic(), 'calls' => $calls, 'unresolved' => $methodUnresolved, 'bounded_recursion' => RecursionProof::bounded($class, $method, $className)];
                 }
             }
             // Only namespace-level functions are callable symbols. Nested
@@ -250,7 +272,7 @@ final class GraphHook implements AfterAnalysisHook
         $starts = [];
         foreach ($nodes as $key => $node) {
             $scope = $graph->scopeFor($node['path'], $node['class']);
-            if ($scope !== null) $starts[$key] = $scope['id'];
+            if ($scope !== null && (($node['service_id'] ?? null) !== null || !isset($serviceVariants[strtolower($node['class'])]))) $starts[$key] = $scope['id'];
         }
         ksort($starts);
         if ($this->declarations !== null) {
@@ -285,7 +307,8 @@ final class GraphHook implements AfterAnalysisHook
             }
             return $resolvedAliases[$key] = !$invalid && count($matches) === 1 ? $matches[0] : null;
         };
-        $outgoing = function (string $key) use (&$edges, &$nodes, &$unresolved, $graph, $context, $files, $indexFile, $resolveAlias): array {
+        $targetKey = static fn (array $call): string => self::nodeKey($call['to'], $canonicalService[$call['service_id'] ?? ''] ?? null);
+        $outgoing = function (string $key) use (&$edges, &$nodes, &$unresolved, $graph, $context, $files, $indexFile, $resolveAlias, $targetKey): array {
             if (isset($edges[$key])) return $edges[$key];
             foreach ($nodes[$key]['unresolved'] as $issue) $unresolved[] = $issue;
             $calls = array_values(array_filter($nodes[$key]['calls'], static fn ($call) => $graph->withinRoot(self::targetType($call['to']))));
@@ -314,7 +337,7 @@ final class GraphHook implements AfterAnalysisHook
             $methodIndex = 0;
             $result = [];
             foreach ($calls as $call) {
-                $target = strtolower($call['to']);
+                $target = $targetKey($call);
                 $location = str_starts_with($call['to'], 'function:')
                     ? $context->codebase->getFunction(substr($call['to'], strlen('function:')))?->location->file
                     : ($metadata[$methodIndex++]?->location->file ?? null);
@@ -332,6 +355,7 @@ final class GraphHook implements AfterAnalysisHook
                     $unresolved[] = [$call['file'], $call['position'], 'Class callback target is not a static method: ' . $call['to']];
                     continue;
                 }
+                $call['target_key'] = $target;
                 $result[] = $call;
             }
             usort($result, static fn ($a, $b) => [$a['to'], $a['path'], $a['line'], $a['column']] <=> [$b['to'], $b['path'], $b['line'], $b['column']]);
@@ -357,7 +381,7 @@ final class GraphHook implements AfterAnalysisHook
                 $limit = $graph->mode === 'direct' ? 1 : $graph->maxDepth;
                 if (count($proof) >= $limit) {
                     if ($graph->mode === 'transitive') foreach ($nodes[$current]['calls'] as $call) {
-                        if ($graph->withinRoot(self::targetType($call['to'])) && !isset($seen[strtolower($call['to'])])) {
+                        if ($graph->withinRoot(self::targetType($call['to'])) && !isset($seen[$targetKey($call)])) {
                             $depthWarnings[$scopeId . ':' . $startKey] = [$start['file'], $start['position'], 'Configured graph depth was reached before traversal completed'];
                             break;
                         }
@@ -365,7 +389,7 @@ final class GraphHook implements AfterAnalysisHook
                     continue;
                 }
                 foreach ($outgoing($current) as $edge) {
-                    $target = strtolower($edge['to']);
+                    $target = $edge['target_key'];
                     if (isset($seen[$target])) continue;
                     $seen[$target] = true;
                     $queue[] = [$target, [...$proof, $edge]];
@@ -375,7 +399,7 @@ final class GraphHook implements AfterAnalysisHook
             foreach (array_keys($seen) as $key) {
                 $adjacency[$key] = [];
                 foreach ($nodes[$key]['calls'] as $call) {
-                    $target = strtolower($call['to']);
+                    $target = $targetKey($call);
                     if (isset($seen[$target], $nodes[$target])) $adjacency[$key][] = $target;
                 }
             }
@@ -553,23 +577,23 @@ final class GraphHook implements AfterAnalysisHook
         return $value instanceof Node\Expr\ClassConstFetch && $value->class instanceof Node\Name && $value->name instanceof Node\Identifier && strcasecmp($value->name->toString(), 'class') === 0;
     }
 
-    /** @param array<string, array{string, string, string}> $properties @return array{string, string}|null */
+    /** @param array<string, array{string, string, string, ?string}> $properties @return array{string, string, ?string}|null */
     private static function receiverBinding(Node\Expr $receiver, string $method, Node\Stmt\Class_ $class, string $className, array $properties): ?array
     {
         if ($receiver instanceof Node\Expr\New_ && $receiver->class instanceof Node\Name && !in_array(strtolower($receiver->class->toString()), ['self', 'static', 'parent'], true)) {
-            return [($receiver->class->getAttribute('resolvedName') ?? $receiver->class)->toString(), 'literal temporary instance'];
+            return [($receiver->class->getAttribute('resolvedName') ?? $receiver->class)->toString(), 'literal temporary instance', null];
         }
         if ($receiver instanceof Node\Expr\Variable && $receiver->name === 'this') {
-            if ($class->isFinal()) return [$className, 'final-class this call'];
+            if ($class->isFinal()) return [$className, 'final-class this call', null];
             $declared = $class->getMethod($method);
             return $declared !== null && ($declared->isPrivate() || $declared->isFinal())
-                ? [$className, 'non-overridable this method'] : null;
+                ? [$className, 'non-overridable this method', null] : null;
         }
         $property = self::thisProperty($receiver);
-        return $property !== null && isset($properties[$property]) ? [$properties[$property][0], $properties[$property][1]] : null;
+        return $property !== null && isset($properties[$property]) ? [$properties[$property][0], $properties[$property][1], $properties[$property][3]] : null;
     }
 
-    /** @param array<string, array{string, string, string}> $properties @return array{string, string}|null */
+    /** @param array<string, array{string, string, string, ?string}> $properties @return array{string, string, ?string}|null */
     private static function callbackTarget(Node\Expr $callback, Node\Stmt\Class_ $class, string $className, array $properties): ?array
     {
         if (!$callback instanceof Node\Expr\Array_ || count($callback->items) !== 2) return null;
@@ -582,10 +606,10 @@ final class GraphHook implements AfterAnalysisHook
             $classRef = strtolower($value->class->toString());
             if (in_array($classRef, ['static', 'parent'], true)) return null;
             $targetClass = $classRef === 'self' ? $className : ($value->class->getAttribute('resolvedName') ?? $value->class)->toString();
-            return [$targetClass . '::' . $methodName, 'literal static callback'];
+            return [$targetClass . '::' . $methodName, 'literal static callback', null];
         }
         $binding = self::receiverBinding($value, $methodName, $class, $className, $properties);
-        return $binding === null ? null : [$binding[0] . '::' . $methodName, 'literal instance callback via ' . $binding[1]];
+        return $binding === null ? null : [$binding[0] . '::' . $methodName, 'literal instance callback via ' . $binding[1], $binding[2]];
     }
 
     /** @param array<string, string|false|null> $cache */
@@ -637,20 +661,21 @@ final class GraphHook implements AfterAnalysisHook
         return $cache[$key] = null;
     }
 
-    /** @return array<string, array{string, string, string}> */
-    private function injectedProperties(Node\Stmt\Class_ $class, NodeFinder $finder): array
+    /** @return array<string, array{string, string, string, ?string}> */
+    private function injectedProperties(Node\Stmt\Class_ $class, NodeFinder $finder, ?string $serviceId = null): array
     {
         $constructor = $class->getMethod('__construct');
         if ($constructor === null) return [];
         $properties = [];
         $parameters = [];
-        foreach ($constructor->params as $parameter) {
+        $className = $class->namespacedName instanceof Node\Name ? $class->namespacedName->toString() : (string) $class->name;
+        foreach ($constructor->params as $position => $parameter) {
             if (!is_string($parameter->var->name)) continue;
             $name = $parameter->var->name;
-            $binding = $this->parameterBinding($parameter);
+            $binding = $this->parameterBinding($parameter, $position, $serviceId, $className);
             if ($binding === null) continue;
             $parameters[$name] = $binding;
-            if ($parameter->isPromoted() && $parameter->isPrivate() && ($class->isFinal() || $parameter->isReadonly())) $properties[$name] = [$binding[1], $binding[2], $binding[0]];
+            if ($parameter->isPromoted() && $parameter->isPrivate() && ($class->isFinal() || $parameter->isReadonly())) $properties[$name] = [$binding[1], $binding[2], $binding[0], $binding[3]];
         }
         $declared = [];
         foreach ($class->getProperties() as $property) {
@@ -668,7 +693,7 @@ final class GraphHook implements AfterAnalysisHook
             if ($property === null || !isset($declared[$property]) || !$assignment->expr instanceof Node\Expr\Variable || !is_string($assignment->expr->name)) break;
             $parameter = $assignment->expr->name;
             if (!isset($parameters[$parameter]) || strcasecmp($declared[$property], $parameters[$parameter][0]) !== 0 || isset($properties[$property])) break;
-            $properties[$property] = [$parameters[$parameter][1], $parameters[$parameter][2], $parameters[$parameter][0]];
+            $properties[$property] = [$parameters[$parameter][1], $parameters[$parameter][2], $parameters[$parameter][0], $parameters[$parameter][3]];
             $allowedAssignments[spl_object_id($assignment)] = true;
         }
         foreach ($finder->find($class->stmts, static fn (Node $node): bool => $node instanceof Node\Expr\Assign || $node instanceof Node\Expr\AssignOp || $node instanceof Node\Expr\AssignRef || $node instanceof Node\Expr\PreInc || $node instanceof Node\Expr\PostInc || $node instanceof Node\Expr\PreDec || $node instanceof Node\Expr\PostDec || $node instanceof Node\Stmt\Unset_ || $node instanceof Node\Arg) as $mutation) {
@@ -690,11 +715,18 @@ final class GraphHook implements AfterAnalysisHook
         return $properties;
     }
 
-    /** @return array{string, string, string}|null Declared type, concrete type and proof. */
-    private function parameterBinding(Node\Param $parameter): ?array
+    /** @return array{string, string, string, ?string}|null Declared type, concrete type, proof and target service ID. */
+    private function parameterBinding(Node\Param $parameter, int $position, ?string $serviceId, string $className): ?array
     {
         if (!$parameter->type instanceof Node\Name) return null;
         $type = ($parameter->type->getAttribute('resolvedName') ?? $parameter->type)->toString();
+        if ($serviceId !== null && array_key_exists($position, $this->serviceConstructorBindings[$serviceId] ?? [])) {
+            $targetId = $this->serviceConstructorBindings[$serviceId][$position];
+            if ($targetId === null || !isset($this->serviceClassBindings[$targetId])) return null;
+            $concrete = $this->serviceClassBindings[$targetId];
+            return [$type, $concrete, "Symfony service {$serviceId} argument {$position} -> {$targetId} ({$concrete})", $targetId];
+        }
+        if ($serviceId === null && isset($this->serviceBoundPositions[strtolower($className)][$position])) return null;
         $target = null;
         foreach ($parameter->attrGroups as $group) foreach ($group->attrs as $attribute) {
             $attributeName = ($attribute->name->getAttribute('resolvedName') ?? $attribute->name)->toString();
@@ -707,7 +739,7 @@ final class GraphHook implements AfterAnalysisHook
         if ($target !== null && !isset($this->classBindings[$bindingKey])) return null;
         $concrete = $this->classBindings[$bindingKey] ?? $type;
         $proof = isset($this->classBindings[$bindingKey]) ? "Symfony service alias {$key} -> {$concrete}" : "constructor-attested property {$type}";
-        return [$type, $concrete, $proof];
+        return [$type, $concrete, $proof, null];
     }
 
     private static function thisProperty(Node $node): ?string
@@ -731,10 +763,15 @@ final class GraphHook implements AfterAnalysisHook
         return $found;
     }
 
-    /** @return array<string, mixed> */
-    private static function edge(string $from, string $to, string $path, string $file, string $source, Node\Expr $call, string $evidence): array
+    private static function nodeKey(string $symbol, ?string $serviceId = null): string
     {
-        return ['from' => $from, 'to' => $to, 'path' => $path, 'file' => $file, 'line' => $call->getStartLine(), 'column' => self::column($source, $call->getStartFilePos()), 'position' => $call->getStartFilePos(), 'end' => $call->getEndFilePos() + 1, 'evidence' => $evidence];
+        return strtolower($symbol) . ($serviceId === null ? '' : "\0" . $serviceId);
+    }
+
+    /** @return array<string, mixed> */
+    private static function edge(string $from, string $to, string $path, string $file, string $source, Node\Expr $call, string $evidence, ?string $serviceId = null): array
+    {
+        return ['from' => $from, 'to' => $to, 'service_id' => $serviceId, 'path' => $path, 'file' => $file, 'line' => $call->getStartLine(), 'column' => self::column($source, $call->getStartFilePos()), 'position' => $call->getStartFilePos(), 'end' => $call->getEndFilePos() + 1, 'evidence' => $evidence];
     }
 
     private static function column(string $source, int $position): int
