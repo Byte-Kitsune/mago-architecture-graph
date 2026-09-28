@@ -11,8 +11,8 @@ use Mago\Sdk\Analyzer\PluginRegistry;
 
 final class ArchitecturePlugin implements Plugin
 {
-    /** @param array<string, string> $classBindings @param array<string, string> $serviceClassBindings */
-    public function __construct(private readonly Policy $policy, private readonly array $classBindings = [], private readonly bool $serviceConfigurationComplete = true, private readonly array $serviceClassBindings = []) {}
+    /** @param array<string, string> $classBindings @param array<string, string> $serviceClassBindings @param array<string, array<int, ?string>> $serviceConstructorBindings */
+    public function __construct(private readonly Policy $policy, private readonly array $classBindings = [], private readonly bool $serviceConfigurationComplete = true, private readonly array $serviceClassBindings = [], private readonly array $serviceConstructorBindings = []) {}
 
     public function getDefinition(): PluginDefinition
     {
@@ -25,7 +25,7 @@ final class ArchitecturePlugin implements Plugin
         if ($this->policy->graph?->enabled) {
             $declarations = new DeclarationIndex($this->policy);
             $registry->registerCodebaseScanHook($declarations);
-            $registry->registerAfterAnalysisHook(new GraphHook($this->policy, $this->classBindings, $this->serviceConfigurationComplete, $declarations, $this->serviceClassBindings));
+            $registry->registerAfterAnalysisHook(new GraphHook($this->policy, $this->classBindings, $this->serviceConfigurationComplete, $declarations, $this->serviceClassBindings, $this->serviceConstructorBindings));
         }
     }
 }
