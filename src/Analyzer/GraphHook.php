@@ -27,7 +27,7 @@ final class GraphHook implements AfterAnalysisHook
     private array $serviceBoundPositions = [];
 
     /** @param array<string, string> $classBindings @param array<string, string> $serviceClassBindings @param array<string, array<int, ?string>> $serviceConstructorBindings */
-    public function __construct(private readonly Policy $policy, private readonly array $classBindings = [], private readonly bool $serviceConfigurationComplete = true, private readonly ?DeclarationIndex $declarations = null, private readonly array $serviceClassBindings = [], private readonly array $serviceConstructorBindings = [], private readonly ?\Closure $graphObserver = null)
+    public function __construct(private readonly Policy $policy, private readonly array $classBindings = [], private readonly bool $serviceConfigurationComplete = true, private readonly ?DeclarationIndex $declarations = null, private readonly array $serviceClassBindings = [], private readonly array $serviceConstructorBindings = [], private readonly ?\Closure $graphObserver = null, private readonly ?array $commentMarkers = null)
     {
         foreach ($serviceConstructorBindings as $id => $positions) {
             $class = strtolower($serviceClassBindings[$id]);
@@ -41,6 +41,7 @@ final class GraphHook implements AfterAnalysisHook
         if ($graph === null || !$graph->enabled) return;
         $parser = (new ParserFactory())->createForNewestSupportedVersion();
         $finder = new NodeFinder();
+        $comments = new CommentMetadata($this->commentMarkers);
         $files = [];
         foreach ($context->analysis->files as $file) {
             if (!str_ends_with($file->file, '.php')) continue;
@@ -66,7 +67,7 @@ final class GraphHook implements AfterAnalysisHook
         foreach ($serviceVariants as $class => $variants) {
             if (count($variants) > 64) throw new \InvalidArgumentException("More than 64 constructor variants for {$class}.");
         }
-        $indexFile = function (string $path) use (&$nodes, &$indexed, &$duplicates, &$unresolved, &$aliasesByClass, &$functionCoverage, &$constructorTargets, $serviceVariants, $files, $context, $parser, $finder, $graph): void {
+        $indexFile = function (string $path) use (&$nodes, &$indexed, &$duplicates, &$unresolved, &$aliasesByClass, &$functionCoverage, &$constructorTargets, $serviceVariants, $files, $context, $parser, $finder, $graph, $comments): void {
             if (isset($indexed[$path])) return;
             $indexed[$path] = true;
             $context->cancellation->throwIfCancelled();
@@ -78,6 +79,7 @@ final class GraphHook implements AfterAnalysisHook
                 $unresolved[] = [$source->path, 0, 'PHP parse failed; graph coverage is incomplete'];
                 return;
             }
+            if ($this->graphObserver !== null) $comments->index($statements, $path, $source->contents);
             foreach ($finder->findInstanceOf($statements, Node\Stmt\Class_::class) as $class) {
                 if (!$class->namespacedName instanceof Node\Name) continue;
                 $className = $class->namespacedName->toString();
@@ -395,6 +397,7 @@ final class GraphHook implements AfterAnalysisHook
                 'complete' => $unresolved === [] && $this->serviceConfigurationComplete,
                 'source_files' => count($files), 'max_depth' => $graph->maxDepth,
                 'nodes' => $snapshotNodes, 'edges' => $snapshotEdges,
+                ...$comments->export($snapshotNodes, $snapshotEdges),
                 'unknown' => array_values(array_unique(array_map(static fn (array $issue): string => $issue[2], $unresolved))),
             ]);
         }

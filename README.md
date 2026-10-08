@@ -12,7 +12,7 @@ See the [runnable example](examples/README.md) for a controller that crosses a h
 Requires PHP 8.2+ and Mago 1.50. Pin the beta in your project:
 
 ```sh
-composer require --dev carthage-software/mago:1.50.0 byte-kitsune/mago-architecture-graph:0.1.0-beta.16
+composer require --dev carthage-software/mago:1.50.0 byte-kitsune/mago-architecture-graph:0.1.0-beta.17
 ```
 
 Add an extension host to `mago.toml` (keep your normal `[source]` paths configured):
@@ -176,3 +176,49 @@ sh tests/inspection.sh
 ```
 
 The fictional corpora cover allowed, denied and incomplete paths through a real Mago worker. Licensed under [MIT](LICENSE).
+
+
+## Declaration comment metadata
+
+`inspect()` and `create()` accept an optional final named `commentMarkers` argument.
+A `null` value uses the defaults; an empty list disables extraction. For example:
+
+```php
+ArchitectureGraphExtension::inspect(
+    $root,
+    ['src/Controller'],
+    $observer,
+    commentMarkers: [
+        ['marker' => '[DEV COMMENT]', 'severity' => 'info'],
+        ['marker' => '@deprecated', 'severity' => 'warning'],
+        ['marker' => '@todo', 'severity' => 'info'],
+        ['marker' => '@see', 'severity' => 'reference'],
+    ],
+);
+```
+
+Markers are case-sensitive literal text. The reader uses comments attached to named
+classes, interfaces, traits, enums and methods in the parsed source, never string
+literals. Consecutive `//` comments and `/** ... */` blocks support continuation
+lines until a blank line, another configured marker, an `@` tag or comment end.
+Leading comment delimiters and `*` are removed. Marker text may be empty (for
+example bare `@deprecated`). `@see` targets are preserved as reference text; the
+extension does not claim they are resolved symbols.
+
+Full-source snapshots retain schema version `1` and the existing `nodes` and
+`edges`. They add `symbol_metadata` and `annotation_sites`, plus
+`comment_column_encoding: "utf8_bytes"`. Positions are one-based UTF-8 byte
+columns; `end_column` is exclusive. Each declaration has a symbol, kind, source
+range and annotations containing marker, severity, message and source location.
+Sites additionally identify `target_symbol` and kind (`declaration`,
+`implementation`, `call`, `new`, `extends`, `implements`, `type`).
+
+An interface type comment appears on an implementing class name. An interface
+method comment appears on the matching implementation method and proven direct
+call sites to that method. Unrelated methods and transitive callers are not
+annotated. Class/type references are resolved through PHP namespace/import
+resolution; uncertain calls retain the existing conservative call graph behavior.
+Duplicate symbol declarations suppress their metadata. Extraction is bounded to
+32 markers, 64 annotations per declaration, 4096 message bytes, 50000 symbols and
+250000 reference/call sites. These annotations never affect architecture policy
+findings.

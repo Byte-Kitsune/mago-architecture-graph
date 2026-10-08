@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0-beta.17
+
+- Add reusable configured declaration comment metadata and exact direct-use annotation sites to full-source graph exports.
+- Default markers: `[DEV COMMENT]`, `@deprecated`, `@todo`, and `@see`; configure marker severity or disable extraction.
+- Distinguish interface type notes on implementing class names from interface method notes on implementation signatures and resolved direct calls.
+- Preserve the existing graph schema and policy behavior; bound extraction, reject ambiguous declarations, and expose UTF-8 byte column encoding.
+
 ## 0.1.0-beta.16
 
 - Add `ArchitectureGraphExtension::inspect()` for complete Mago source call graphs without boundary-policy enforcement.

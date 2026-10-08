@@ -13,3 +13,4 @@ jobs:
       - run: find src -name '*.php' -print0 | xargs -0 -n1 php -l
       - run: sh tests/smoke.sh
       - run: sh tests/inspection.sh
+      - run: php tests/comment-metadata.php
