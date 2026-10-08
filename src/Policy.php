@@ -15,12 +15,20 @@ final class Policy
     private readonly string $namespaceRoot;
     public readonly string $projectRoot;
     public readonly ?GraphPolicy $graph;
+    public readonly bool $inspectionOnly;
 
-    public function __construct(string $projectRoot, string $policyPath)
+    public function __construct(string $projectRoot, string $policyPath, ?array $inspectionPaths = null)
     {
         $root = realpath($projectRoot);
         if ($root === false || !is_dir($root)) throw new InvalidArgumentException('Project root is unavailable.');
         $this->projectRoot = $root;
+        $this->inspectionOnly = $inspectionPaths !== null;
+        if ($inspectionPaths !== null) {
+            $this->sourceRoot = $this->namespaceRoot = '';
+            $this->modules = [];
+            $this->graph = GraphPolicy::inspection($inspectionPaths);
+            return;
+        }
         if (!is_file($policyPath) || is_link($policyPath) || filesize($policyPath) > 1024 * 1024) throw new InvalidArgumentException('Architecture policy must be a regular file of at most 1 MiB.');
         $bytes = file_get_contents($policyPath);
         if ($bytes === false) throw new InvalidArgumentException('Cannot read architecture policy.');
@@ -62,6 +70,12 @@ final class Policy
         $this->namespaceRoot = rtrim($data['namespace_root'], '\\');
         $this->modules = $data['modules'];
         $this->graph = isset($data['scope_graph']) ? new GraphPolicy($data['scope_graph']) : null;
+    }
+
+    /** @param list<string> $entrypointPaths */
+    public static function inspection(string $projectRoot, array $entrypointPaths): self
+    {
+        return new self($projectRoot, '', $entrypointPaths);
     }
 
     public function relativePath(string $file): ?string

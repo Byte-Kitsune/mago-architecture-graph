@@ -21,8 +21,31 @@ final class GraphPolicy
     /** @var list<string> */
     private readonly array $exclusions;
 
-    public function __construct(mixed $value)
+    /** Inspection has no namespace/source-root filter and never enforces permissions.
+     * @param list<string> $entrypointPaths
+     */
+    public static function inspection(array $entrypointPaths): self
     {
+        return new self(null, $entrypointPaths);
+    }
+
+    public function __construct(mixed $value, ?array $inspectionPaths = null)
+    {
+        if ($inspectionPaths !== null) {
+            if (!array_is_list($inspectionPaths) || count($inspectionPaths) > 128) throw new InvalidArgumentException('Invalid inspection entry paths.');
+            $scopes = [];
+            foreach (array_values(array_unique($inspectionPaths)) as $index => $path) {
+                if (!self::path($path)) throw new InvalidArgumentException('Unsafe inspection entry path.');
+                $scopes[] = ['id' => 'entry-' . $index, 'path_prefix' => str_ends_with($path, '.php') ? $path : rtrim($path, '/') . '/', 'namespace_prefix' => ''];
+            }
+            $this->enabled = true;
+            $this->mode = 'transitive';
+            $this->maxDepth = 64;
+            $this->sourceRoot = $this->namespaceRoot = '';
+            $this->scopes = $scopes;
+            $this->permissions = $this->exclusions = [];
+            return;
+        }
         if (!is_array($value) || array_is_list($value) || array_diff(array_keys($value), ['version', 'enabled', 'mode', 'max_depth', 'source_root', 'namespace_root', 'scopes', 'method_permissions', 'unlisted_method_policy', 'exclusions']) !== [] || ($value['version'] ?? null) !== '1' || !is_bool($value['enabled'] ?? null) || !in_array($value['mode'] ?? null, ['direct', 'transitive'], true) || !is_int($value['max_depth'] ?? null) || $value['max_depth'] < 1 || $value['max_depth'] > 64 || !self::path($value['source_root'] ?? null) || !self::namespace($value['namespace_root'] ?? null) || !in_array($value['unlisted_method_policy'] ?? 'deny', ['allow', 'deny'], true)) throw new InvalidArgumentException('Invalid scope graph policy.');
         foreach (['scopes', 'method_permissions', 'exclusions'] as $key) if (isset($value[$key]) && (!is_array($value[$key]) || !array_is_list($value[$key]))) throw new InvalidArgumentException('Invalid scope graph list.');
         $scopes = $value['scopes'] ?? [];
@@ -84,7 +107,7 @@ final class GraphPolicy
     private static function within(string $name, string $root): bool
     {
         $root = rtrim($root, '\\');
-        return $name === $root || str_starts_with($name, $root . '\\');
+        return $root === '' || $name === $root || str_starts_with($name, $root . '\\');
     }
 
     private static function path(mixed $path): bool

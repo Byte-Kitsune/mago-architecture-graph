@@ -9,14 +9,32 @@ use Mago\Sdk\Extension;
 
 final class ArchitectureGraphExtension
 {
-    public const VERSION = '0.1.0-beta.15';
+    public const VERSION = '0.1.0-beta.16';
     /**
      * The policy and literal service bindings are trusted operator inputs, never selected by analyzed PHP.
+     * @param \Closure(array<string, mixed>): void|null $graphObserver Optional complete source graph export; independent of policy findings.
      * @param array<string, string> $classBindings Type or "Type $target" to concrete class.
      * @param array<string, string> $serviceClassBindings Exact service ID to declared class.
      * @param array<string, array<int, ?string>> $serviceConstructorBindings Service ID to positional target service IDs; null is explicitly unresolved.
      */
-    public static function create(string $projectRoot, string $policyPath, array $classBindings = [], bool $serviceConfigurationComplete = true, array $serviceClassBindings = [], array $serviceConstructorBindings = []): Extension
+    public static function create(string $projectRoot, string $policyPath, array $classBindings = [], bool $serviceConfigurationComplete = true, array $serviceClassBindings = [], array $serviceConstructorBindings = [], ?\Closure $graphObserver = null): Extension
+    {
+        return self::build(new Policy($projectRoot, $policyPath), $classBindings, $serviceConfigurationComplete, $serviceClassBindings, $serviceConstructorBindings, $graphObserver);
+    }
+
+    /** Export the complete configured Mago source set, without enforcing a policy.
+     * @param list<string> $entrypointPaths Relative entry directories or PHP files.
+     * @param \Closure(array<string, mixed>): void $graphObserver
+     * @param array<string, string> $classBindings
+     * @param array<string, string> $serviceClassBindings
+     * @param array<string, array<int, ?string>> $serviceConstructorBindings
+     */
+    public static function inspect(string $projectRoot, array $entrypointPaths, \Closure $graphObserver, array $classBindings = [], bool $serviceConfigurationComplete = true, array $serviceClassBindings = [], array $serviceConstructorBindings = []): Extension
+    {
+        return self::build(Policy::inspection($projectRoot, $entrypointPaths), $classBindings, $serviceConfigurationComplete, $serviceClassBindings, $serviceConstructorBindings, $graphObserver);
+    }
+
+    private static function build(Policy $policy, array $classBindings, bool $serviceConfigurationComplete, array $serviceClassBindings, array $serviceConstructorBindings, ?\Closure $graphObserver): Extension
     {
         $typeBindings = [];
         foreach ($classBindings as $type => $class) {
@@ -54,7 +72,7 @@ final class ArchitectureGraphExtension
             identifier: 'byte-kitsune/architecture-graph',
             name: 'Path-aware architecture graph',
             version: self::VERSION,
-            analyzerPlugins: [new ArchitecturePlugin(new Policy($projectRoot, $policyPath), $typeBindings, $serviceConfigurationComplete, $serviceClassBindings, $serviceConstructorBindings)],
+            analyzerPlugins: [new ArchitecturePlugin($policy, $typeBindings, $serviceConfigurationComplete, $serviceClassBindings, $serviceConstructorBindings, $graphObserver)],
         );
     }
 }

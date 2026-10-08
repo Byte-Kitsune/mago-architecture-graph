@@ -27,7 +27,7 @@ final class GraphHook implements AfterAnalysisHook
     private array $serviceBoundPositions = [];
 
     /** @param array<string, string> $classBindings @param array<string, string> $serviceClassBindings @param array<string, array<int, ?string>> $serviceConstructorBindings */
-    public function __construct(private readonly Policy $policy, private readonly array $classBindings = [], private readonly bool $serviceConfigurationComplete = true, private readonly ?DeclarationIndex $declarations = null, private readonly array $serviceClassBindings = [], private readonly array $serviceConstructorBindings = [])
+    public function __construct(private readonly Policy $policy, private readonly array $classBindings = [], private readonly bool $serviceConfigurationComplete = true, private readonly ?DeclarationIndex $declarations = null, private readonly array $serviceClassBindings = [], private readonly array $serviceConstructorBindings = [], private readonly ?\Closure $graphObserver = null)
     {
         foreach ($serviceConstructorBindings as $id => $positions) {
             $class = strtolower($serviceClassBindings[$id]);
@@ -45,7 +45,7 @@ final class GraphHook implements AfterAnalysisHook
         foreach ($context->analysis->files as $file) {
             if (!str_ends_with($file->file, '.php')) continue;
             $path = $this->policy->relativePath($file->file);
-            if ($path !== null && str_starts_with($path, $graph->sourceRoot . '/') && !$graph->excluded($path)) $files[$path] = $file;
+            if ($path !== null && ($graph->sourceRoot === '' || str_starts_with($path, $graph->sourceRoot . '/')) && !$graph->excluded($path)) $files[$path] = $file;
         }
         ksort($files);
         $nodes = [];
@@ -204,7 +204,7 @@ final class GraphHook implements AfterAnalysisHook
                             [$targetSymbol, $evidence, $targetService] = $target;
                             $calls[] = self::edge($symbol, $targetSymbol, $path, $source->path, $source->contents, $call, $evidence, $targetService ?? (str_contains($evidence, 'this') ? $serviceId : null));
                         }
-                        $nodes[$key] = ['symbol' => $symbol, 'class' => $className, 'service_id' => $serviceId, 'path' => $path, 'file' => $source->path, 'line' => $method->getStartLine(), 'position' => $method->getStartFilePos(), 'static' => $method->isStatic(), 'calls' => $calls, 'unresolved' => $methodUnresolved, 'bounded_recursion' => RecursionProof::bounded($class, $method, $className)];
+                        $nodes[$key] = ['symbol' => $symbol, 'class' => $className, 'service_id' => $serviceId, 'path' => $path, 'file' => $source->path, 'line' => $method->getStartLine(), 'position' => $method->getStartFilePos(), 'column' => self::column($source->contents, $method->getStartFilePos()) + 1, 'static' => $method->isStatic(), 'calls' => $calls, 'unresolved' => $methodUnresolved, 'bounded_recursion' => RecursionProof::bounded($class, $method, $className)];
                     }
                 }
             }
@@ -264,11 +264,11 @@ final class GraphHook implements AfterAnalysisHook
                         if ($target === null) $functionUnresolved[] = [$source->path, $call->getStartFilePos(), "Named function call {$function} in {$symbol} is not modeled"];
                         elseif ($target !== false) $calls[] = self::edge($symbol, 'function:' . $target, $path, $source->path, $source->contents, $call, 'project function call');
                     }
-                    $nodes[$key] = ['symbol' => $symbol, 'class' => '', 'path' => $path, 'file' => $source->path, 'line' => $declaration->getStartLine(), 'position' => $declaration->getStartFilePos(), 'static' => false, 'calls' => $calls, 'unresolved' => $functionUnresolved, 'bounded_recursion' => false];
+                    $nodes[$key] = ['symbol' => $symbol, 'class' => '', 'path' => $path, 'file' => $source->path, 'line' => $declaration->getStartLine(), 'position' => $declaration->getStartFilePos(), 'column' => self::column($source->contents, $declaration->getStartFilePos()) + 1, 'static' => false, 'calls' => $calls, 'unresolved' => $functionUnresolved, 'bounded_recursion' => false];
                 }
             }
         };
-        foreach (array_keys($files) as $path) if ($graph->possibleScopePath($path)) $indexFile($path);
+        foreach (array_keys($files) as $path) if ($this->graphObserver !== null || $graph->possibleScopePath($path)) $indexFile($path);
         $starts = [];
         foreach ($nodes as $key => $node) {
             $scope = $graph->scopeFor($node['path'], $node['class']);
@@ -361,6 +361,44 @@ final class GraphHook implements AfterAnalysisHook
             usort($result, static fn ($a, $b) => [$a['to'], $a['path'], $a['line'], $a['column']] <=> [$b['to'], $b['path'], $b['line'], $b['column']]);
             return $edges[$key] = $result;
         };
+        // A consumer must receive the actual complete source graph, including
+        // callers without policy permissions. Policy evidence is not a graph.
+        if ($this->graphObserver !== null) {
+            if (!$this->serviceConfigurationComplete && $starts === [] && $files !== []) {
+                $first = reset($files);
+                $unresolved[] = [$first->file, 0, 'Trusted Symfony service configuration is unavailable or incomplete'];
+            }
+            $snapshotNodes = [];
+            $snapshotEdges = [];
+            foreach (array_keys($nodes) as $key) {
+                $context->cancellation->throwIfCancelled();
+                if (count($nodes) > 50000) throw new \RuntimeException('Graph export exceeds 50000 nodes.');
+                $node = $nodes[$key];
+                $snapshotNodes[] = [
+                    'id' => $key, 'symbol' => $node['symbol'], 'path' => $node['path'],
+                    'line' => $node['line'], 'column' => $node['column'],
+                    'service_id' => $node['service_id'] ?? null,
+                    'entry_scope' => $starts[$key] ?? null,
+                ];
+                foreach ($outgoing($key) as $edge) {
+                    if (count($snapshotEdges) >= 250000) throw new \RuntimeException('Graph export exceeds 250000 edges.');
+                    $snapshotEdges[] = [
+                        'from' => $key, 'to' => $edge['target_key'], 'path' => $edge['path'],
+                        'line' => $edge['line'], 'column' => $edge['column'] + 1,
+                        'evidence' => $edge['evidence'],
+                    ];
+                }
+            }
+            ($this->graphObserver)([
+                'schema_version' => '1', 'capability' => 'full_source_call_graph',
+                'extension_version' => ArchitectureGraphExtension::VERSION,
+                'complete' => $unresolved === [] && $this->serviceConfigurationComplete,
+                'source_files' => count($files), 'max_depth' => $graph->maxDepth,
+                'nodes' => $snapshotNodes, 'edges' => $snapshotEdges,
+                'unknown' => array_values(array_unique(array_map(static fn (array $issue): string => $issue[2], $unresolved))),
+            ]);
+        }
+        if ($this->policy->inspectionOnly) return;
         $proofs = [];
         $depthWarnings = [];
         $cycleIncomplete = false;
@@ -622,7 +660,7 @@ final class GraphHook implements AfterAnalysisHook
             if (!array_key_exists($key, $cache)) {
                 $metadata = $context->codebase->getFunction($candidate);
                 $path = $metadata === null ? null : $this->policy->relativePath($metadata->location->file);
-                $cache[$key] = $metadata === null ? null : ($path !== null && str_starts_with($path, $graph->sourceRoot . '/') && $graph->withinRoot($metadata->originalName) ? $metadata->originalName : false);
+                $cache[$key] = $metadata === null ? null : ($path !== null && ($graph->sourceRoot === '' || str_starts_with($path, $graph->sourceRoot . '/')) && $graph->withinRoot($metadata->originalName) ? $metadata->originalName : false);
             }
             if ($cache[$key] !== null) return $cache[$key];
         }

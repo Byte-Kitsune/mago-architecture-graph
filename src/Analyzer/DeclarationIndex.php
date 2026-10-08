@@ -29,7 +29,7 @@ final class DeclarationIndex implements CodebaseScanHook
     public function getTargets(): array
     {
         $root = $this->policy->graph->sourceRoot;
-        return [$root . '/*.php', $root . '/**/*.php'];
+        return $root === '' ? ['*.php', '**/*.php'] : [$root . '/*.php', $root . '/**/*.php'];
     }
 
     public function scan(CodebaseScanContext $context): void

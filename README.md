@@ -12,7 +12,7 @@ See the [runnable example](examples/README.md) for a controller that crosses a h
 Requires PHP 8.2+ and Mago 1.50. Pin the beta in your project:
 
 ```sh
-composer require --dev carthage-software/mago:1.50.0 byte-kitsune/mago-architecture-graph:0.1.0-beta.15
+composer require --dev carthage-software/mago:1.50.0 byte-kitsune/mago-architecture-graph:0.1.0-beta.16
 ```
 
 Add an extension host to `mago.toml` (keep your normal `[source]` paths configured):
@@ -142,11 +142,37 @@ When the graph is enabled and at least one PHP source is in its configured root,
 
 This is static evidence, not a runtime trace. It does not replace Mago's parse diagnostics or prove all PHP execution paths. Benchmark the full `mago analyze` run on your own project before setting a CI time budget.
 
+## Export a source call graph
+
+Editor integrations can use the inspection API without a boundary policy:
+
+```php
+$extension = ArchitectureGraphExtension::inspect(
+    projectRoot: $root,
+    entrypointPaths: ['src/Controller', 'src/Command'],
+    graphObserver: static function (array $snapshot): void {
+        file_put_contents('/tmp/call-graph.json', json_encode($snapshot, JSON_THROW_ON_ERROR));
+    },
+    classBindings: $map->classBindings(),
+    serviceConfigurationComplete: $map->incomplete === [],
+    serviceClassBindings: $map->serviceClassBindings(),
+    serviceConstructorBindings: $constructorBindings,
+);
+(new Worker($extension))->run();
+```
+
+The observer receives `schema_version: "1"`, `capability: "full_source_call_graph"`, completeness, source-file count, nodes, actual invocation edges, unresolved reasons and the traversal depth limit. Node IDs preserve distinct constructor service instances. Node and call-site paths are project-relative; lines and columns are one-based. Entry paths select configured starting methods; they do not assert Symfony routes or runtime execution. The graph covers the complete source files supplied by Mago, across directories and namespaces; included vendor metadata is not treated as application source.
+
+Inspection emits no boundary or permission findings. Injection alone is not a call edge. Dynamic dispatch, missing source targets, duplicate declarations and unproven receivers remain incomplete. The export is bounded to 50,000 nodes and 250,000 edges; exceeding either limit fails the analysis rather than exporting a silently partial graph. Consumers should write to a sidecar file: worker stdout carries the SDK protocol.
+
+An existing explicit policy can instead pass a trailing `graphObserver` closure to `create()`. That export respects its source root, namespace, exclusions and configured scopes, but includes callers independently of allowed/denied method permissions. Existing policy enforcement remains unchanged.
+
 ## Develop
 
 ```sh
 composer install
 sh tests/smoke.sh
+sh tests/inspection.sh
 ```
 
 The fictional corpora cover allowed, denied and incomplete paths through a real Mago worker. Licensed under [MIT](LICENSE).

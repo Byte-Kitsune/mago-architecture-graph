@@ -1,18 +1,19 @@
 #!/bin/sh
 set -eu
+mago_bin=${MAGO_BIN:-"$(pwd)/vendor/bin/mago"}
 php tests/check.php
 cd tests/corpus
 report=$(mktemp)
 trap 'rm -f "$report"' EXIT HUP INT TERM
 set +e
-../../vendor/bin/mago analyze --reporting-format json --minimum-report-level error > "$report"
+"$mago_bin" analyze --reporting-format json --minimum-report-level error > "$report"
 status=$?
 set -e
 [ "$status" -eq 1 ]
 php -r '$r=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR); $c=array_column($r["issues"],"code"); foreach(["byte-kitsune/architecture-graph/foreign-module-instance"=>1,"byte-kitsune/architecture-graph/forbidden-internal-access"=>2] as $required=>$expected) if(count(array_filter($c,fn($v)=>$v===$required))!==$expected) { fwrite(STDERR,json_encode($c)); exit(1); } echo "Architecture corpus passed\n";' "$report"
 cd ../graph-corpus
 set +e
-../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+"$mago_bin" analyze --reporting-format json --minimum-report-level note > "$report"
 status=$?
 set -e
 [ "$status" -eq 1 ]
@@ -24,7 +25,7 @@ if (count($attestations)!==1) throw new RuntimeException("Expected one architect
 $note=$attestations[0]["notes"][0]??"";
 if (!str_starts_with($note,"extension-attestation: ")) throw new RuntimeException("Missing extension attestation payload.");
 $attestation=json_decode(substr($note,strlen("extension-attestation: ")),true,512,JSON_THROW_ON_ERROR);
-if (($attestation["schema_version"]??null)!=="1" || ($attestation["extension"]??null)!=="byte-kitsune/architecture-graph" || ($attestation["version"]??null)!=="0.1.0-beta.15" || ($attestation["capability"]??null)!=="scope_graph" || ($attestation["complete"]??null)!==false || ($attestation["source_files"]??0)<1) throw new RuntimeException("Invalid architecture analysis attestation.");
+if (($attestation["schema_version"]??null)!=="1" || ($attestation["extension"]??null)!=="byte-kitsune/architecture-graph" || ($attestation["version"]??null)!=="0.1.0-beta.16" || ($attestation["capability"]??null)!=="scope_graph" || ($attestation["complete"]??null)!==false || ($attestation["source_files"]??0)<1) throw new RuntimeException("Invalid architecture analysis attestation.");
 foreach (["scope-forbidden-entrypoint-method"=>1,"scope-allowed-entrypoint-method"=>3,"scope-graph-incomplete"=>1] as $suffix=>$expected) {
     $matches=array_values(array_filter($issues,fn($i)=>$i["code"]==="byte-kitsune/architecture-graph/".$suffix));
     if (count($matches)!==$expected) { fwrite(STDERR,"Expected $expected $suffix, got ".count($matches)."\n"); exit(1); }
@@ -38,7 +39,7 @@ echo "Graph corpus passed\n";
 ' "$report"
 cd ../alias-corpus
 set +e
-../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+"$mago_bin" analyze --reporting-format json --minimum-report-level note > "$report"
 status=$?
 set -e
 [ "$status" -eq 1 ]
@@ -54,7 +55,7 @@ foreach ($proofs as $issue) {
 echo "Symfony alias graph corpus passed\n";
 ' "$report"
 set +e
-ARCHITECTURE_CONFIG_INCOMPLETE=1 ../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+ARCHITECTURE_CONFIG_INCOMPLETE=1 "$mago_bin" analyze --reporting-format json --minimum-report-level note > "$report"
 status=$?
 set -e
 [ "$status" -eq 1 ]
@@ -70,7 +71,7 @@ echo "Incomplete service configuration corpus passed\n";
 ' "$report"
 cd ../ambiguous-alias-corpus
 set +e
-../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+"$mago_bin" analyze --reporting-format json --minimum-report-level note > "$report"
 status=$?
 set -e
 [ "$status" -eq 1 ]
@@ -81,7 +82,7 @@ echo "Ambiguous alias corpus passed\n";
 ' "$report"
 cd ../recursion-corpus
 set +e
-../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+"$mago_bin" analyze --reporting-format json --minimum-report-level note > "$report"
 status=$?
 set -e
 [ "$status" -eq 1 ]
@@ -100,7 +101,7 @@ echo "Recursion graph corpus passed\n";
 ' "$report"
 cd ../unsafe-property-corpus
 set +e
-../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+"$mago_bin" analyze --reporting-format json --minimum-report-level note > "$report"
 status=$?
 set -e
 [ "$status" -eq 1 ]
@@ -113,7 +114,7 @@ echo "Mutable property corpus passed\n";
 ' "$report"
 cd ../dispatch-corpus
 set +e
-../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+"$mago_bin" analyze --reporting-format json --minimum-report-level note > "$report"
 status=$?
 set -e
 [ "$status" -eq 1 ]
@@ -141,7 +142,7 @@ if (count($importProofs)!==1) throw new RuntimeException("Imported function alia
 echo "Expanded dispatch corpus passed\n";
 ' "$report"
 set +e
-ARCHITECTURE_COMPLETE=1 ../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+ARCHITECTURE_COMPLETE=1 "$mago_bin" analyze --reporting-format json --minimum-report-level note > "$report"
 status=$?
 set -e
 [ "$status" -eq 1 ]
@@ -166,7 +167,7 @@ if (!array_filter($denied,fn($issue)=>str_contains($issue["notes"][0]??"","App\\
 echo "Complete readonly dispatch corpus passed\n";
 ' "$report"
 set +e
-ARCHITECTURE_COMPLETE=1 ARCHITECTURE_SERVICE_INCOMPLETE=1 ../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+ARCHITECTURE_COMPLETE=1 ARCHITECTURE_SERVICE_INCOMPLETE=1 "$mago_bin" analyze --reporting-format json --minimum-report-level note > "$report"
 status=$?
 set -e
 [ "$status" -eq 1 ]
@@ -182,7 +183,7 @@ echo "Incomplete container configuration corpus passed\n";
 ' "$report"
 cd ../duplicate-corpus
 set +e
-../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+"$mago_bin" analyze --reporting-format json --minimum-report-level note > "$report"
 status=$?
 set -e
 [ "$status" -eq 1 ]
@@ -198,7 +199,7 @@ echo "Duplicate declaration corpus passed\n";
 ' "$report"
 cd ../proof-size-corpus
 set +e
-../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+"$mago_bin" analyze --reporting-format json --minimum-report-level note > "$report"
 status=$?
 set -e
 [ "$status" -eq 1 ]
@@ -218,7 +219,7 @@ echo "Oversized proof attestation corpus passed\n";
 ' "$report"
 cd ../local-receiver-corpus
 set +e
-../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+"$mago_bin" analyze --reporting-format json --minimum-report-level note > "$report"
 status=$?
 set -e
 [ "$status" -eq 1 ]
@@ -240,7 +241,7 @@ foreach (["literal temporary instance","straight-line local instance"] as $name)
 echo "Conservative local receiver corpus passed\n";
 ' "$report"
 set +e
-ARCHITECTURE_SAFE=1 ../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+ARCHITECTURE_SAFE=1 "$mago_bin" analyze --reporting-format json --minimum-report-level note > "$report"
 status=$?
 set -e
 [ "$status" -eq 1 ]
@@ -262,7 +263,7 @@ echo "Complete local receiver corpus passed\n";
 ' "$report"
 cd ../service-constructor-corpus
 set +e
-../../vendor/bin/mago analyze --reporting-format json --minimum-report-level note > "$report"
+"$mago_bin" analyze --reporting-format json --minimum-report-level note > "$report"
 status=$?
 set -e
 [ "$status" -eq 1 ]
