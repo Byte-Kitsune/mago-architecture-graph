@@ -1,5 +1,6 @@
 {
   "version": "1",
+  "dependency_mode": "imports",
   "source_root": "app",
   "namespace_root": "Sample",
   "modules": [
