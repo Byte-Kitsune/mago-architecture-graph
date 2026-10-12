@@ -10,6 +10,8 @@ final class GraphCycles
     /** @param array<string, list<string>> $adjacency @return list<list<string>> */
     public static function find(array $adjacency): array
     {
+        if (!class_exists(\ByteKitsune\MagoNative\Engine::class, false)) require_once dirname(__DIR__) . '/NativeEngine.php';
+        if (\ByteKitsune\MagoNative\Engine::enabled()) return \ByteKitsune\MagoNative\Engine::cycles($adjacency);
         ksort($adjacency);
         $reverse = array_fill_keys(array_keys($adjacency), []);
         foreach ($adjacency as $from => $targets) {

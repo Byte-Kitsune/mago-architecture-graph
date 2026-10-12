@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0-RC1 — 2026-10-12
+
+- Add an opt-in shared Rust computational backend selected by `MAGO_NATIVE_ENGINE`, retaining the version-matched PHP SDK adapter.
+- Verify native strict mode and complete fixture-report parity in CI against the minimum and latest supported Mago versions.
+- See `NATIVE_BACKEND.md` for migrated components, bounded transport, compatibility fallback and platform status.
+
 ## 1.2.0 — 2026-10-12
 
 - Check literal class references by default, including constructor types and other references in the same namespace without imports. Policies can explicitly select `dependency_mode: imports` to preserve the historical behavior.

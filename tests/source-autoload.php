@@ -12,3 +12,5 @@ spl_autoload_register(static function (string $class) use ($root): void {
     $path = $root . '/src/' . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php';
     if (is_file($path)) require $path;
 }, true, true);
+
+if (!class_exists(\ByteKitsune\MagoNative\Engine::class, false)) require_once $root . '/src/NativeEngine.php';

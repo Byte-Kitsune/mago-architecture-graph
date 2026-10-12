@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace ByteKitsune\MagoArchitectureGraph\Analyzer;
 
+if (!class_exists(\ByteKitsune\MagoNative\Engine::class, false)) require_once dirname(__DIR__) . '/NativeEngine.php';
+if (!class_exists(\ByteKitsune\MagoNative\Parser::class, false)) require_once dirname(__DIR__) . '/NativeParser.php';
+
+
 use PhpParser\Node;
 use PhpParser\NodeTraverser;
 use PhpParser\NodeVisitor\NameResolver;
@@ -17,6 +21,8 @@ final class ClassReferenceCollector
     /** @return list<array{name: string, namespace: string, source_class: ?string, import: bool, start: int, end: int}> */
     public static function collect(string $source): array
     {
+        if (!class_exists(\ByteKitsune\MagoNative\Engine::class, false)) require_once dirname(__DIR__) . '/NativeEngine.php';
+        if (\ByteKitsune\MagoNative\Engine::enabled()) return \ByteKitsune\MagoNative\Engine::analyze($source)['references'];
         if (strlen($source) > 8 * 1024 * 1024) throw new \LengthException('Class reference source exceeds 8 MiB.');
         $collector = new class extends NodeVisitorAbstract {
             /** @var list<array{name: string, namespace: string, source_class: ?string, import: bool, start: int, end: int}> */
@@ -67,7 +73,7 @@ final class ClassReferenceCollector
                     || $parent instanceof Node\Stmt\Catch_ && in_array($node, $parent->types, true);
             }
         };
-        $parser = (new ParserFactory())->createForNewestSupportedVersion();
+        $parser = \ByteKitsune\MagoNative\Parser::create();
         (new NodeTraverser(new NameResolver(), new ParentConnectingVisitor(), $collector))->traverse($parser->parse($source) ?? []);
         return $collector->references;
     }
