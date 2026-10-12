@@ -1,0 +1,16 @@
+{
+  "version": "1",
+  "source_root": "app",
+  "namespace_root": "Sample",
+  "modules": [
+    {
+      "id": "handlers",
+      "path_pattern": "app/Handlers/",
+      "namespace_prefix": "Sample\\Flow",
+      "layer": "handler",
+      "allowed_target_layers": [],
+      "entrypoint_suffix": "Task",
+      "forbid_peer_entrypoints": true
+    }
+  ]
+}

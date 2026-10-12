@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0 — 2026-10-12
+
+- Check literal class references by default, including constructor types and other references in the same namespace without imports. Policies can explicitly select `dependency_mode: imports` to preserve the historical behavior.
+- Add real-Mago regression coverage for ten unimported peer-entrypoint dependencies, declaration-path resolution, duplicate references and allowed self/data dependencies.
+
 ## 1.1.0 — 2026-10-12
 
 - Allow Mago >=1.50.0,<2.0.0 instead of restricting dependencies to the 1.50 minor series.

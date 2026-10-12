@@ -36,8 +36,8 @@ final class Policy
         if ($bytes === false) throw new InvalidArgumentException('Cannot read architecture policy.');
         $data = json_decode($bytes, true, 64, JSON_THROW_ON_ERROR);
         if (!is_array($data) || array_is_list($data) || array_diff(array_keys($data), ['version', 'source_root', 'namespace_root', 'modules', 'scope_graph', 'dependency_mode']) !== [] || ($data['version'] ?? null) !== '1' || !self::safePath($data['source_root'] ?? null) || !self::namespace($data['namespace_root'] ?? null)) throw new InvalidArgumentException('Invalid architecture policy header.');
-        if (!in_array($data['dependency_mode'] ?? 'imports', ['imports', 'class-references'], true)) throw new InvalidArgumentException('Invalid architecture dependency mode.');
-        $this->dependencyMode = $data['dependency_mode'] ?? 'imports';
+        if (!in_array($data['dependency_mode'] ?? 'class-references', ['imports', 'class-references'], true)) throw new InvalidArgumentException('Invalid architecture dependency mode.');
+        $this->dependencyMode = $data['dependency_mode'] ?? 'class-references';
         if (!isset($data['modules']) || !is_array($data['modules']) || !array_is_list($data['modules']) || count($data['modules']) < 1 || count($data['modules']) > 128) throw new InvalidArgumentException('Architecture policy requires 1..128 ordered modules.');
         $ids = [];
         foreach ($data['modules'] as $module) {

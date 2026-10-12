@@ -19,4 +19,5 @@ jobs:
       - run: sh tests/inspection.sh
       - run: sh tests/instance-smoke.sh
       - run: sh tests/requirements-smoke.sh
+      - run: sh tests/namespace-smoke.sh
       - run: php tests/comment-metadata.php

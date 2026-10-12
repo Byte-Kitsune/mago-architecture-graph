@@ -16,7 +16,7 @@ CI checks this floor and the latest compatible 1.x release.
 Requires PHP 8.2+ and Mago >=1.50.0,<2.0.0. Pin the stable release in your project:
 
 ```sh
-composer require --dev "carthage-software/mago:^1.50" byte-kitsune/mago-architecture-graph:1.1.0
+composer require --dev "carthage-software/mago:^1.50" byte-kitsune/mago-architecture-graph:1.2.0
 ```
 
 Add an extension host to `mago.toml` (keep your normal `[source]` paths configured):
@@ -252,9 +252,14 @@ sh tests/instance-smoke.sh
 
 ## Check literal class dependencies
 
-By default, boundary rules check class imports. Set the top-level policy field
-`"dependency_mode": "class-references"` to check literal class dependencies from
-the complete analyzed file snapshot, including references without imports.
+Boundary rules check literal class dependencies from the complete analyzed file
+snapshot by default, including references without imports in the same namespace.
+The top-level policy field `"dependency_mode": "class-references"` explicitly
+selects this default. To retain the historical import-only behavior, set
+`"dependency_mode": "imports"`; that mode cannot detect unimported class types.
+Existing policies that omit this field can therefore produce additional boundary
+findings after upgrading. For example, `__construct(PeerTask $peer)` now checks
+`PeerTask` even when both classes share a namespace and no `use` is needed.
 This mode resolves import aliases and grouped class imports, property and
 parameter types, return types, nullable/union/intersection types, inheritance,
 interfaces, traits, attributes, catch types, construction, static member access,
@@ -284,6 +289,14 @@ and generated fully qualified references without ordinary import aliases:
 ```sh
 sh tests/requirements-smoke.sh
 ```
+
+The [same-namespace fixture](tests/namespace-corpus/policy.json) checks ten peer
+dependencies without `use` imports, including promoted constructor types,
+nullable/union types, construction, class constants and namespace-relative names.
+Declaration paths are taken from the codebase even when namespace and directory
+do not mirror each other. Self references and allowed data types remain accepted.
+Run `sh tests/namespace-smoke.sh` to compare default, explicit class-reference and
+legacy import-only behavior.
 
 ## Read the results
 
