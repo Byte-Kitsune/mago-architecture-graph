@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.0 — 2026-10-12
+
+- Publish the existing analyzer and inspection APIs as the first stable release.
+- Set extension and analysis-attestation version metadata to `1.0.0`.
+- Update installation instructions to use the stable package version.
+- Preserve conservative analysis, explicit incomplete evidence, and existing bounds.
+
 ## 0.1.0-beta.17
 
 - Add reusable configured declaration comment metadata and exact direct-use annotation sites to full-source graph exports.

@@ -3,16 +3,16 @@
 [![Tests](https://github.com/Byte-Kitsune/mago-architecture-graph/actions/workflows/check.yml/badge.svg?branch=main)](https://github.com/Byte-Kitsune/mago-architecture-graph/actions/workflows/check.yml)
 [![Security Check](https://github.com/Byte-Kitsune/mago-architecture-graph/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/Byte-Kitsune/mago-architecture-graph/actions/workflows/security.yml)
 
-Path-aware module boundaries and a conservative PHP call graph for [Mago](https://mago.carthage.software/1.50.0/en/). This beta is a Mago **Analyzer** plugin. Use Mago Guard for ordinary namespace and structural rules; this package adds checks that need the source path, parsed namespace, or a proven call path.
+Path-aware module boundaries and a conservative PHP call graph for [Mago](https://mago.carthage.software/1.50.0/en/). This package is a Mago **Analyzer** plugin. Use Mago Guard for ordinary namespace and structural rules; this package adds checks that need the source path, parsed namespace, or a proven call path.
 
 See the [runnable example](examples/README.md) for a controller that crosses a hidden module boundary and reaches a forbidden method through another service.
 
 ## Install and run
 
-Requires PHP 8.2+ and Mago 1.50. Pin the beta in your project:
+Requires PHP 8.2+ and Mago 1.50. Pin the stable release in your project:
 
 ```sh
-composer require --dev carthage-software/mago:1.50.0 byte-kitsune/mago-architecture-graph:0.1.0-beta.17
+composer require --dev carthage-software/mago:1.50.0 byte-kitsune/mago-architecture-graph:1.0.0
 ```
 
 Add an extension host to `mago.toml` (keep your normal `[source]` paths configured):
