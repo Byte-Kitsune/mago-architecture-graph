@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add explicit public-entrypoint grants from modules outside a family without relaxing internal visibility, layer checks, peer restrictions, or owner isolation.
+- Add wildcard graph scope paths and named captures, with namespace-segment target patterns bound to the original entry throughout transitive traversal.
+- Resolve graph permission specificity deterministically and retain capture bindings in graph evidence.
+- Verify positive and negative instance rules, unsafe configurations, and repeated real Mago reports using fictional workshop fixtures.
+
 ## 1.0.0 — 2026-10-12
 
 - Publish the existing analyzer and inspection APIs as the first stable release.

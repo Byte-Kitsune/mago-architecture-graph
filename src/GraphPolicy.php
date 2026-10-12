@@ -14,9 +14,9 @@ final class GraphPolicy
     public readonly int $maxDepth;
     public readonly string $sourceRoot;
     public readonly string $namespaceRoot;
-    /** @var list<array{id: string, path_prefix: string, namespace_prefix: string}> */
+    /** @var list<array<string, mixed>> */
     private readonly array $scopes;
-    /** @var list<array{scope_id: string, target_type: string, method?: string, decision: string, policy_id: string, rationale: string}> */
+    /** @var list<array<string, mixed>> */
     private readonly array $permissions;
     /** @var list<string> */
     private readonly array $exclusions;
@@ -54,11 +54,11 @@ final class GraphPolicy
         if (count($scopes) < 1 || count($scopes) > 128 || count($permissions) < 1 || count($permissions) > 512 || count($exclusions) > 128) throw new InvalidArgumentException('Scope graph policy exceeds configured bounds.');
         $ids = [];
         foreach ($scopes as $scope) {
-            if (!is_array($scope) || array_is_list($scope) || array_diff(array_keys($scope), ['id', 'path_prefix', 'namespace_prefix']) !== [] || !self::identifier($scope['id'] ?? null) || isset($ids[$scope['id']]) || !self::path($scope['path_prefix'] ?? null) || !self::namespace($scope['namespace_prefix'] ?? null) || !self::within($scope['namespace_prefix'], $value['namespace_root'])) throw new InvalidArgumentException('Invalid or duplicate scope root.');
-            $ids[$scope['id']] = true;
+            if (!is_array($scope) || array_is_list($scope) || array_diff(array_keys($scope), ['id', 'path_prefix', 'path_pattern', 'path_captures', 'namespace_prefix']) !== [] || !self::identifier($scope['id'] ?? null) || isset($ids[$scope['id']]) || !self::scopePath($scope) || !self::namespace($scope['namespace_prefix'] ?? null) || !self::within($scope['namespace_prefix'], $value['namespace_root'])) throw new InvalidArgumentException('Invalid or duplicate scope root.');
+            $ids[$scope['id']] = $scope['path_captures'] ?? [];
         }
         foreach ($permissions as $permission) {
-            if (!is_array($permission) || array_is_list($permission) || array_diff(array_keys($permission), ['scope_id', 'target_type', 'method', 'decision', 'policy_id', 'rationale']) !== [] || !isset($ids[$permission['scope_id'] ?? '']) || !self::namespace($permission['target_type'] ?? null) || isset($permission['method']) && !self::identifier($permission['method']) || !in_array($permission['decision'] ?? null, ['allow', 'deny'], true) || !self::identifier($permission['policy_id'] ?? null) || !is_string($permission['rationale'] ?? null) || $permission['rationale'] === '' || strlen($permission['rationale']) > 256) throw new InvalidArgumentException('Invalid method permission.');
+            if (!is_array($permission) || array_is_list($permission) || array_diff(array_keys($permission), ['scope_id', 'target_type', 'target_type_pattern', 'method', 'decision', 'policy_id', 'rationale']) !== [] || !isset($ids[$permission['scope_id'] ?? '']) || !self::targetSelector($permission, $ids[$permission['scope_id']] ?? []) || isset($permission['method']) && !self::identifier($permission['method']) || !in_array($permission['decision'] ?? null, ['allow', 'deny'], true) || !self::identifier($permission['policy_id'] ?? null) || !is_string($permission['rationale'] ?? null) || $permission['rationale'] === '' || strlen($permission['rationale']) > 256) throw new InvalidArgumentException('Invalid method permission.');
         }
         foreach ($exclusions as $path) if (!self::path($path)) throw new InvalidArgumentException('Invalid graph exclusion.');
         $this->enabled = $value['enabled'];
@@ -79,27 +79,108 @@ final class GraphPolicy
 
     public function possibleScopePath(string $path): bool
     {
-        foreach ($this->scopes as $scope) if (str_starts_with($path, $scope['path_prefix'])) return true;
+        foreach ($this->scopes as $scope) if (self::scopeMatch($scope, $path) !== null) return true;
         return false;
     }
 
-    /** @return array{id: string, path_prefix: string, namespace_prefix: string}|null */
+    /** @return array<string, mixed>|null */
     public function scopeFor(string $path, string $class): ?array
     {
-        foreach ($this->scopes as $scope) if (str_starts_with($path, $scope['path_prefix']) && self::within($class, $scope['namespace_prefix'])) return $scope;
+        foreach ($this->scopes as $scope) {
+            $captures = self::scopeMatch($scope, $path);
+            if ($captures !== null && self::within($class, $scope['namespace_prefix'])) return $captures === [] ? $scope : [...$scope, 'captures' => $captures];
+        }
         return null;
     }
 
-    /** @return array{scope_id: string, target_type: string, method?: string, decision: string, policy_id: string, rationale: string}|null */
-    public function permission(string $scope, string $symbol): ?array
+    /** Bind target selectors to the original entry path, never to a traversed target.
+     * @param array<string, string> $captures
+     * @return array<string, mixed>|null
+     */
+    public function permission(string $scope, string $symbol, array $captures = []): ?array
     {
         [$class, $method] = explode('::', $symbol, 2) + ['', ''];
         $best = null;
+        $bestRank = null;
         foreach ($this->permissions as $candidate) {
-            if ($candidate['scope_id'] !== $scope || strcasecmp($candidate['target_type'], $class) !== 0 || isset($candidate['method']) && strcasecmp($candidate['method'], $method) !== 0) continue;
-            if ($best === null || (int) isset($candidate['method']) > (int) isset($best['method']) || isset($candidate['method']) === isset($best['method']) && $candidate['decision'] === 'deny') $best = $candidate;
+            if ($candidate['scope_id'] !== $scope || isset($candidate['method']) && strcasecmp($candidate['method'], $method) !== 0) continue;
+            $rank = self::targetMatch($candidate, $class, $captures);
+            if ($rank === null) continue;
+            // Preserve method specificity; then prefer literal segments over bound
+            // captures over wildcards. A deny wins equal specificity in any order.
+            $rank = [(int) isset($candidate['method']), ...$rank];
+            if ($best === null || $rank > $bestRank || $rank === $bestRank && $candidate['decision'] === 'deny') {
+                $best = $candidate;
+                $bestRank = $rank;
+            }
         }
-        return $best;
+        return $best === null || $captures === [] ? $best : [...$best, 'scope_captures' => $captures];
+    }
+
+    /** Literal prefixes retain their existing semantics. Patterns use whole segments. */
+    private static function scopePath(array $scope): bool
+    {
+        if (isset($scope['path_prefix']) === isset($scope['path_pattern'])) return false;
+        if (isset($scope['path_prefix'])) return !isset($scope['path_captures']) && self::path($scope['path_prefix']);
+        $pattern = $scope['path_pattern'];
+        if (!is_string($pattern) || strlen($pattern) > 2048 || preg_match('/[\x00-\x1f\x7f]/', $pattern) || !self::path(str_replace('*', 'segment', $pattern))) return false;
+        $segments = explode('/', rtrim($pattern, '/'));
+        foreach ($segments as $segment) if (str_contains($segment, '*') && $segment !== '*') return false;
+        $count = count(array_filter($segments, static fn ($part) => $part === '*'));
+        $names = $scope['path_captures'] ?? [];
+        return $count <= 16 && is_array($names) && array_is_list($names) && count($names) <= 16 && ($names === [] || count($names) === $count) && count(array_unique($names, SORT_REGULAR)) === count($names) && array_filter($names, static fn ($name) => !self::identifier($name)) === [];
+    }
+
+    /** @return array<string, string>|null */
+    private static function scopeMatch(array $scope, string $path): ?array
+    {
+        if (!self::path($path)) return null;
+        if (isset($scope['path_prefix'])) return str_starts_with($path, $scope['path_prefix']) ? [] : null;
+        $pattern = $scope['path_pattern'];
+        $regex = str_replace('\\*', '([^/]+)', preg_quote($pattern, '~'));
+        if (preg_match('~^' . $regex . (str_ends_with($pattern, '/') ? '' : '$') . '~D', $path, $matches) !== 1) return null;
+        $result = [];
+        foreach ($scope['path_captures'] ?? [] as $index => $name) $result[$name] = $matches[$index + 1];
+        return $result;
+    }
+
+    private static function targetSelector(array $permission, array $captures): bool
+    {
+        if (isset($permission['target_type']) === isset($permission['target_type_pattern'])) return false;
+        if (isset($permission['target_type'])) return self::namespace($permission['target_type']);
+        $pattern = $permission['target_type_pattern'];
+        if (!is_string($pattern) || strlen($pattern) > 2048 || !str_contains($pattern, '*') && !str_contains($pattern, '{')) return false;
+        foreach (explode('\\', $pattern) as $part) {
+            if ($part === '*') continue;
+            if (preg_match('/^\{([A-Za-z_][A-Za-z0-9_-]*)\}$/D', $part, $match) === 1 && in_array($match[1], $captures, true)) continue;
+            if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/D', $part) !== 1) return false;
+        }
+        return true;
+    }
+
+    /** @return array{int, int}|null */
+    private static function targetMatch(array $permission, string $class, array $captures): ?array
+    {
+        if (isset($permission['target_type'])) return strcasecmp($permission['target_type'], $class) === 0 ? [count(explode('\\', $class)), 0] : null;
+        $pattern = explode('\\', $permission['target_type_pattern']);
+        $actual = explode('\\', $class);
+        if (count($pattern) !== count($actual)) return null;
+        $literals = $bound = 0;
+        foreach ($pattern as $index => $part) {
+            if ($part === '*') {
+                if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/D', $actual[$index]) !== 1) return null;
+                continue;
+            }
+            if (str_starts_with($part, '{')) {
+                $value = $captures[substr($part, 1, -1)] ?? null;
+                if (!is_string($value) || preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/D', $value) !== 1 || strcasecmp($value, $actual[$index]) !== 0) return null;
+                ++$bound;
+            } else {
+                if (strcasecmp($part, $actual[$index]) !== 0) return null;
+                ++$literals;
+            }
+        }
+        return [$literals, $bound];
     }
 
     public function withinRoot(string $class): bool { return self::within($class, $this->namespaceRoot); }

@@ -37,7 +37,7 @@ final class Policy
         if (!isset($data['modules']) || !is_array($data['modules']) || !array_is_list($data['modules']) || count($data['modules']) < 1 || count($data['modules']) > 128) throw new InvalidArgumentException('Architecture policy requires 1..128 ordered modules.');
         $ids = [];
         foreach ($data['modules'] as $module) {
-            if (!is_array($module) || array_is_list($module) || array_diff(array_keys($module), ['id', 'path_pattern', 'namespace_prefix', 'layer', 'allowed_target_layers', 'entrypoint_suffix', 'entrypoint_path_pattern', 'forbid_peer_entrypoints', 'module_family', 'module_family_captures', 'allowed_family_bindings', 'excluded']) !== []) throw new InvalidArgumentException('Invalid architecture module shape.');
+            if (!is_array($module) || array_is_list($module) || array_diff(array_keys($module), ['id', 'path_pattern', 'namespace_prefix', 'layer', 'allowed_target_layers', 'entrypoint_suffix', 'entrypoint_path_pattern', 'forbid_peer_entrypoints', 'module_family', 'module_family_captures', 'allowed_family_bindings', 'allowed_family_entrypoints', 'excluded']) !== []) throw new InvalidArgumentException('Invalid architecture module shape.');
             if (!self::identifier($module['id'] ?? null) || isset($ids[$module['id']]) || !self::safePath($module['path_pattern'] ?? null, true) || !self::namespace($module['namespace_prefix'] ?? null) || !self::identifier($module['layer'] ?? null) || !self::identifier($module['entrypoint_suffix'] ?? null, true)) throw new InvalidArgumentException('Invalid or duplicate architecture module.');
             if (!($module['excluded'] ?? false) && !str_starts_with(rtrim($module['namespace_prefix'], '\\') . '\\', rtrim($data['namespace_root'], '\\') . '\\')) throw new InvalidArgumentException('Module namespace must be within the configured root.');
             if (!isset($module['allowed_target_layers']) || !is_array($module['allowed_target_layers']) || !array_is_list($module['allowed_target_layers']) || count($module['allowed_target_layers']) > 128 || array_filter($module['allowed_target_layers'], fn ($v) => !self::identifier($v)) !== []) throw new InvalidArgumentException('Invalid allowed target layers.');
@@ -52,11 +52,23 @@ final class Policy
             foreach ($module['allowed_family_bindings'] ?? [] as $binding) {
                 if (!is_array($binding) || array_diff(array_keys($binding), ['target_family', 'target_layer', 'source_capture', 'target_capture']) !== [] || !self::identifier($binding['target_family'] ?? null) || !self::identifier($binding['target_layer'] ?? null) || !in_array($binding['source_capture'] ?? null, $captures, true) || !self::identifier($binding['target_capture'] ?? null)) throw new InvalidArgumentException('Invalid module-family binding.');
             }
+            $entrypoints = $module['allowed_family_entrypoints'] ?? [];
+            if (!is_array($entrypoints) || !array_is_list($entrypoints) || count($entrypoints) > 64 || $family !== null && $entrypoints !== []) throw new InvalidArgumentException('Family entrypoint grants require a source without a family and at most 64 entries.');
+            foreach ($entrypoints as $grant) {
+                if (!is_array($grant) || array_is_list($grant) || array_diff(array_keys($grant), ['target_family', 'target_layer']) !== [] || !self::identifier($grant['target_family'] ?? null) || !self::identifier($grant['target_layer'] ?? null) || !in_array($grant['target_layer'], $module['allowed_target_layers'], true)) throw new InvalidArgumentException('Invalid family entrypoint grant.');
+            }
             $ids[$module['id']] = true;
         }
         $layers = array_unique(array_column($data['modules'], 'layer'));
         foreach ($data['modules'] as $module) {
             foreach ($module['allowed_target_layers'] as $targetLayer) if (!in_array($targetLayer, $layers, true)) throw new InvalidArgumentException('Unknown target layer.');
+            foreach ($module['allowed_family_entrypoints'] ?? [] as $grant) {
+                $exists = false;
+                foreach ($data['modules'] as $target) {
+                    if (($target['module_family'] ?? null) === $grant['target_family'] && $target['layer'] === $grant['target_layer'] && !($target['excluded'] ?? false)) $exists = true;
+                }
+                if (!$exists) throw new InvalidArgumentException('Family entrypoint grant has no active target.');
+            }
             foreach ($module['allowed_family_bindings'] ?? [] as $binding) {
                 $exists = false;
                 foreach ($data['modules'] as $target) {
@@ -111,6 +123,7 @@ final class Policy
     public function violation(array $source, array $target, string $sourcePath, string $targetPath): ?string
     {
         if (!$this->sameInstance($source, $target, $sourcePath, $targetPath)) return 'foreign-module-instance';
+        if (($source['module_family'] ?? null) === null && ($target['module_family'] ?? null) !== null && !$this->entrypoint($target, $targetPath)) return 'forbidden-internal-access';
         if ($source['layer'] === $target['layer']) return ($source['forbid_peer_entrypoints'] ?? false) && $this->entrypoint($target, $targetPath) ? 'no-peer-entrypoint' : null;
         if (!in_array($target['layer'], $source['allowed_target_layers'], true)) return 'disallowed-layer';
         return $this->entrypoint($target, $targetPath) ? null : 'forbidden-internal-access';
@@ -136,7 +149,12 @@ final class Policy
         $from = $source['module_family'] ?? null;
         $to = $target['module_family'] ?? null;
         if ($to === null) return true;
-        if ($from === null) return false;
+        if ($from === null) {
+            foreach ($source['allowed_family_entrypoints'] ?? [] as $grant) {
+                if ($grant['target_family'] === $to && $grant['target_layer'] === $target['layer']) return true;
+            }
+            return false;
+        }
         $fromCaptures = self::captures($source, $sourcePath);
         $toCaptures = self::captures($target, $targetPath);
         if ($from === $to && $fromCaptures === $toCaptures) return true;

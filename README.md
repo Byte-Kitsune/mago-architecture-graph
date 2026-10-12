@@ -134,6 +134,100 @@ $extension = ArchitectureGraphExtension::create(
 
 The graph keeps those two `Processor` instances separate through private `$this` calls and constructor-injected properties. Exact container lookups retain the selected service ID; an unbound construction does not borrow either service's constructor proof. The [service constructor fixture](tests/service-constructor-corpus) exercises this case. A compiled reference is needed for runtime service parity: parsing service YAML or PHP cannot establish all effective aliases, environment overrides and argument values. The caller must regenerate and verify that reference for the analyzed revision; this extension does not compile or execute the application container.
 
+## Explicit family entrances and reusable graph scopes
+
+Module families are independent of layer names. Give related modules the same
+`module_family` and capture names to isolate their instances across layers.
+Existing policies keep their current behavior: a caller without a family cannot
+import a family target unless an explicit entrance grant is configured.
+
+A caller outside a family can be allowed to import its public entrypoints:
+
+```json
+{
+  "id": "lobby",
+  "path_pattern": "src/Lobby/",
+  "namespace_prefix": "App\\Lobby",
+  "layer": "lobby",
+  "allowed_target_layers": ["gate"],
+  "entrypoint_suffix": "",
+  "allowed_family_entrypoints": [
+    {"target_family": "workshop", "target_layer": "gate"}
+  ]
+}
+```
+
+Add this source module alongside the target family modules, which retain their
+`entrypoint_suffix` and optional `entrypoint_path_pattern`. Each grant applies to
+any instance of the named family in exactly the named layer, and only to its
+configured entrypoint classes. It does not expose internal classes, other layers,
+or change `forbid_peer_entrypoints`. Only a source without `module_family` may
+have these grants; sources inside a family retain their owner isolation and
+existing explicit `allowed_family_bindings`. The target layer must also be in
+`allowed_target_layers`, and the named family/layer must have an active module.
+The list is limited to 64 grants and rejects unknown fields or targets.
+
+Call-graph scopes can select repeated directories using `path_pattern` instead of
+`path_prefix`. Each `*` matches one nonempty path segment; a trailing `/` includes
+that directory's descendants. `path_captures` optionally names the wildcard
+segments in order, with at most 16 unique names. Use one selector per scope;
+literal `path_prefix` rules retain their previous semantics. Scopes stay ordered;
+the first matching path and namespace selects the scope. Namespace prefixes
+remain literal and must match as well.
+
+The following lists belong inside the existing `scope_graph` configuration:
+
+```json
+{
+  "scopes": [
+    {
+      "id": "steps",
+      "path_pattern": "src/Workshop/*/Steps/",
+      "path_captures": ["owner"],
+      "namespace_prefix": "App\\Workshop"
+    }
+  ],
+  "method_permissions": [
+    {
+      "scope_id": "steps",
+      "target_type_pattern": "App\\Workshop\\*\\Tools\\EntryTool",
+      "method": "ping",
+      "decision": "deny",
+      "policy_id": "foreign-tool",
+      "rationale": "Tools of another workshop are unavailable"
+    },
+    {
+      "scope_id": "steps",
+      "target_type_pattern": "App\\Workshop\\{owner}\\Tools\\EntryTool",
+      "method": "ping",
+      "decision": "allow",
+      "policy_id": "own-tool",
+      "rationale": "The entry may use its own workshop tool"
+    }
+  ]
+}
+```
+
+Choose either the existing literal `target_type` or `target_type_pattern`.
+A type pattern's `*` matches one namespace segment; `{owner}` binds one segment
+from the original scope entry path and remains fixed throughout transitive
+traversal. Bindings are literal PHP namespace identifiers, not regular expressions.
+Unknown capture names, partial wildcards, recursive `**`, unsafe paths and
+ambiguous selector shapes are rejected. Method-specific rules take precedence;
+then more literal namespace segments, then more bound segments win. A denial
+wins equal specificity, independently of list order. Pair a bound allowance with
+an explicit wildcard denial to reject other instances. Patterns are limited to
+2048 bytes and 16 path wildcards. Bound graph proofs include `scope_captures` alongside the existing
+source-to-target call edges; literal graph proof fields are unchanged.
+
+The [fictional instance fixture](tests/instance-corpus/policy.json) demonstrates
+public entrances, inaccessible internals, peer restrictions, independent owners,
+and direct/transitive isolation using the actual Mago worker:
+
+```sh
+sh tests/instance-smoke.sh
+```
+
 ## Read the results
 
 Boundary violations appear as Analyzer issues such as `foreign-module-instance` and `forbidden-internal-access`. Graph permissions produce `scope-forbidden-entrypoint-method` errors or `scope-allowed-entrypoint-method` notes. The `graph-evidence` note contains the shortest modeled path, policy ID, target and `complete` flag. `scope-graph-incomplete` means a reached part could not be proven; do not interpret missing denials as a clean graph when it appears. Reachable unproven recursion is `recursive-cycle`; a narrow guarded integer self-call with a positive literal decrement is classified as `bounded-recursion`.
