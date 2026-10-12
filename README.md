@@ -161,11 +161,29 @@ Add this source module alongside the target family modules, which retain their
 `entrypoint_suffix` and optional `entrypoint_path_pattern`. Each grant applies to
 any instance of the named family in exactly the named layer, and only to its
 configured entrypoint classes. It does not expose internal classes, other layers,
-or change `forbid_peer_entrypoints`. Only a source without `module_family` may
-have these grants; sources inside a family retain their owner isolation and
-existing explicit `allowed_family_bindings`. The target layer must also be in
+or change `forbid_peer_entrypoints`. A source with its own `module_family` may
+also have an explicit entrance grant, including a narrowly configured shared-data
+exception within its family. Without a grant, distinct owners remain isolated.
+Existing `allowed_family_bindings` restrict cross-family access by equal named
+source and target captures; use these for a link tied to one target owner rather
+than an entrance into arbitrary public instances. The target layer must also be in
 `allowed_target_layers`, and the named family/layer must have an active module.
 The list is limited to 64 grants and rejects unknown fields or targets.
+
+Mark a target module with `"external_entrypoints_only": true` to reject
+references from its own family and owner to its configured entrypoint classes.
+This flag works across layers and is independent of directory names. It requires
+a module family. Public data-contract modules can keep the flag unset, so their
+own instance may use its records, enums and interfaces while peer instances stay
+blocked unless an explicit shared-data exception is configured. An entrance
+grant or matching same-family capture binding cannot override the own-instance
+entrypoint guard. Entrances from other
+families and capture-bound links still follow their explicit permissions.
+
+For example, configure a portal class as one module with this flag and its public
+data contracts as a separate module without it. Internal callers can use their
+own data contracts but cannot call back into their portal. Public modules retain
+family captures so cross-instance data dependencies can still be rejected.
 
 Call-graph scopes can select repeated directories using `path_pattern` instead of
 `path_prefix`. Each `*` matches one nonempty path segment; a trailing `/` includes
@@ -226,6 +244,41 @@ and direct/transitive isolation using the actual Mago worker:
 
 ```sh
 sh tests/instance-smoke.sh
+```
+
+## Check literal class dependencies
+
+By default, boundary rules check class imports. Set the top-level policy field
+`"dependency_mode": "class-references"` to check literal class dependencies from
+the complete analyzed file snapshot, including references without imports.
+This mode resolves import aliases and grouped class imports, property and
+parameter types, return types, nullable/union/intersection types, inheritance,
+interfaces, traits, attributes, catch types, construction, static member access,
+`instanceof`, and class constants. It reports each resolved target once per
+source namespace/file, so importing a class and using it does not duplicate a
+boundary finding. References to a class from that same class (for example, a
+factory returning its own type) are not incoming dependencies. Function/constant imports, calls, and arbitrary strings are
+not mistaken for classes.
+
+No source is executed. Dynamic class names, reflection strings, PHPDoc-only
+references and runtime service resolution are outside this literal dependency
+mode. Known class names and declaration paths come from Mago's codebase snapshot;
+undeclared targets use the existing configured source-root/namespace-root mapping;
+it does not claim parity with another dependency analyzer's collectors. Each
+file is limited to 8 MiB and 100,000 literal references. Parse failures and
+exceeded limits produce `architecture-reference-incomplete` errors, rather than
+a clean result with partial reference coverage. The module policy's namespace,
+path, exclusions, owner bindings and entrypoint rules remain in force.
+
+The [neutral requirements fixture](tests/requirements-corpus/policy.json) covers
+cross-family public entrances, capture-bound links, peer isolation, shared-data
+exceptions and internal entrypoint restrictions. It uses repeated cells, mixes,
+links, routes, bundles, parcels and screens with no concrete owner names in the
+policy. Run the same acceptance matrix against imports, resolved class references,
+and generated fully qualified references without ordinary import aliases:
+
+```sh
+sh tests/requirements-smoke.sh
 ```
 
 ## Read the results

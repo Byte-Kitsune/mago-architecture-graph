@@ -51,7 +51,7 @@ try {
     $bad = $data; $bad['modules'][0]['allowed_family_entrypoints'] = [['target_family' => 'missing', 'target_layer' => 'gate']]; $invalidModules[] = $bad;
     $bad = $data; $bad['modules'][0]['allowed_family_entrypoints'][0]['target_layer'] = 'tool'; $invalidModules[] = $bad;
     $bad = $data; $bad['modules'][0]['allowed_family_entrypoints'][0]['extra'] = true; $invalidModules[] = $bad;
-    $bad = $data; $bad['modules'][2]['allowed_family_entrypoints'] = [['target_family' => 'workshop', 'target_layer' => 'step']]; $invalidModules[] = $bad;
+    $bad = $data; $bad['modules'][2]['external_entrypoints_only'] = 'yes'; $invalidModules[] = $bad;
     $bad = $data; $bad['modules'][2]['excluded'] = true; $invalidModules[] = $bad;
     $bad = $data; $bad['modules'][0]['allowed_family_entrypoints'] = array_fill(0, 65, $data['modules'][0]['allowed_family_entrypoints'][0]); $invalidModules[] = $bad;
     foreach ($invalidModules as $invalid) {

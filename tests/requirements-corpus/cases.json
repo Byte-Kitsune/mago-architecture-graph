@@ -1,0 +1,182 @@
+[
+  {
+    "source": "app/Cells/Amber/Service/PeerValue.php",
+    "targets": [
+      "app/Cells/Cedar/Api/Value/Record.php"
+    ],
+    "expected": "foreign-module-instance"
+  },
+  {
+    "source": "app/Cells/Amber/Service/OwnValue.php",
+    "targets": [
+      "app/Cells/Amber/Api/Value/Record.php"
+    ],
+    "expected": null
+  },
+  {
+    "source": "app/Cells/Amber/Service/OwnPortal.php",
+    "targets": [
+      "app/Cells/Amber/Api/Portal.php"
+    ],
+    "expected": "no-peer-entrypoint"
+  },
+  {
+    "source": "app/Mixes/Amber/Service/UsePortal.php",
+    "targets": [
+      "app/Cells/Cedar/Api/Portal.php"
+    ],
+    "expected": null
+  },
+  {
+    "source": "app/Mixes/Amber/Service/UseValue.php",
+    "targets": [
+      "app/Cells/Indigo/Api/Value/Record.php"
+    ],
+    "expected": null
+  },
+  {
+    "source": "app/Links/Cedar/Service/OwnPortal.php",
+    "targets": [
+      "app/Cells/Cedar/Api/Portal.php"
+    ],
+    "expected": null
+  },
+  {
+    "source": "app/Links/Cedar/Service/ForeignPortal.php",
+    "targets": [
+      "app/Cells/Indigo/Api/Portal.php"
+    ],
+    "expected": "foreign-module-instance"
+  },
+  {
+    "source": "app/Routes/Amber/Service/PeerValue.php",
+    "targets": [
+      "app/Routes/Cedar/Api/Value/Record.php"
+    ],
+    "expected": "foreign-module-instance"
+  },
+  {
+    "source": "app/Routes/Amber/Service/OwnHub.php",
+    "targets": [
+      "app/Routes/Amber/Api/Hub.php"
+    ],
+    "expected": "no-peer-entrypoint"
+  },
+  {
+    "source": "app/Bundles/Amber/Service/UseHub.php",
+    "targets": [
+      "app/Routes/Cedar/Api/Hub.php"
+    ],
+    "expected": null
+  },
+  {
+    "source": "app/Parcels/Amber/Service/PeerValue.php",
+    "targets": [
+      "app/Parcels/Cedar/Api/Value/Record.php"
+    ],
+    "expected": "foreign-module-instance"
+  },
+  {
+    "source": "app/Screens/Amber/Entry/PeerValue.php",
+    "targets": [
+      "app/Screens/Cedar/Shared/Record.php"
+    ],
+    "expected": null
+  },
+  {
+    "source": "app/Screens/Amber/Entry/PeerController.php",
+    "targets": [
+      "app/Screens/Cedar/Entry/Controller.php"
+    ],
+    "expected": "foreign-module-instance"
+  },
+  {
+    "source": "app/Screens/Amber/Entry/OwnController.php",
+    "targets": [
+      "app/Screens/Amber/Entry/Controller.php"
+    ],
+    "expected": "no-peer-entrypoint"
+  },
+  {
+    "source": "app/Screens/Amber/Entry/UsePublic.php",
+    "targets": [
+      "app/Cells/Indigo/Api/Portal.php",
+      "app/Cells/Indigo/Api/Value/Record.php",
+      "app/Cells/Indigo/Api/Value/Flag.php",
+      "app/Cells/Indigo/Api/Value/Problem.php",
+      "app/Cells/Indigo/Api/Value/Token.php",
+      "app/Cells/Indigo/Api/Value/Envelope.php",
+      "app/Cells/Indigo/Api/Value/Contract.php"
+    ],
+    "expected": null
+  },
+  {
+    "source": "app/Outside/Entry/UsePublic.php",
+    "targets": [
+      "app/Cells/Cedar/Api/Portal.php",
+      "app/Cells/Cedar/Api/Value/Record.php",
+      "app/Cells/Cedar/Api/Value/Flag.php",
+      "app/Cells/Cedar/Api/Value/Problem.php",
+      "app/Cells/Cedar/Api/Value/Token.php",
+      "app/Cells/Cedar/Api/Value/Envelope.php",
+      "app/Cells/Cedar/Api/Value/Contract.php"
+    ],
+    "expected": null
+  },
+  {
+    "source": "app/Mixes/Amber/Service/PrivateShortcut.php",
+    "targets": [
+      "app/Cells/Cedar/Private/Vault.php"
+    ],
+    "expected": "foreign-module-instance"
+  },
+  {
+    "source": "app/Screens/Amber/Entry/PrivateShortcut.php",
+    "targets": [
+      "app/Cells/Cedar/Private/Vault.php"
+    ],
+    "expected": "foreign-module-instance"
+  },
+  {
+    "source": "app/Cells/Amber/Service/TypedPeer.php",
+    "targets": [
+      "app/Cells/Cedar/Api/Value/Record.php"
+    ],
+    "expected": "foreign-module-instance",
+    "modes": [
+      "class-references"
+    ]
+  },
+  {
+    "source": "app/Cells/Amber/Service/NamespaceAliasPeer.php",
+    "targets": [
+      "app/Cells/Cedar/Api/Value/Record.php"
+    ],
+    "expected": "foreign-module-instance",
+    "modes": [
+      "class-references"
+    ]
+  },
+  {
+    "source": "app/Cells/Amber/Service/PeerGrouped.php",
+    "targets": [
+      "app/Cells/Cedar/Api/Value/Record.php"
+    ],
+    "expected": "foreign-module-instance"
+  },
+  {
+    "source": "app/Cells/Amber/Service/OnlyFunctions.php",
+    "targets": [],
+    "expected": null
+  },
+  {
+    "source": "app/Cells/Amber/Service/CasePeer.php",
+    "targets": [
+      "app/Cells/Cedar/Api/Value/Record.php"
+    ],
+    "expected": "foreign-module-instance",
+    "modes": [
+      "class-references"
+    ]
+  }
+]
