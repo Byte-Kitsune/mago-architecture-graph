@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace ByteKitsune\MagoArchitectureGraph\Analyzer;
 
+if (!class_exists(\ByteKitsune\MagoNative\Engine::class, false)) require_once dirname(__DIR__) . '/NativeEngine.php';
+if (!class_exists(\ByteKitsune\MagoNative\Parser::class, false)) require_once dirname(__DIR__) . '/NativeParser.php';
+
+
 use ByteKitsune\MagoArchitectureGraph\ArchitectureGraphExtension;
 use ByteKitsune\MagoArchitectureGraph\GraphPolicy;
 use ByteKitsune\MagoArchitectureGraph\Policy;
@@ -39,7 +43,7 @@ final class GraphHook implements AfterAnalysisHook
     {
         $graph = $this->policy->graph;
         if ($graph === null || !$graph->enabled) return;
-        $parser = (new ParserFactory())->createForNewestSupportedVersion();
+        $parser = \ByteKitsune\MagoNative\Parser::create();
         $finder = new NodeFinder();
         $comments = new CommentMetadata($this->commentMarkers);
         $files = [];
@@ -414,7 +418,40 @@ final class GraphHook implements AfterAnalysisHook
             $start = $nodes[$startKey];
             $queue = [[$startKey, []]];
             $seen = [$startKey => true];
-            for ($index = 0; $index < count($queue); $index++) {
+            $native = \ByteKitsune\MagoNative\Engine::enabled();
+            if ($native) {
+                $edgeCache = [];
+                $callback = function (array $request) use (&$edgeCache, &$nodes, $outgoing, $targetKey, $graph, $context): array {
+                    $expand = $depth = [];
+                    foreach ($request['graph_batch']['expand'] as $key) {
+                        $context->cancellation->throwIfCancelled();
+                        $edgeCache[$key] = $outgoing($key);
+                        $expand[$key] = array_column($edgeCache[$key], 'target_key');
+                    }
+                    foreach ($request['graph_batch']['depth'] as $key) {
+                        $depth[$key] = [];
+                        foreach ($nodes[$key]['calls'] as $call) if ($graph->withinRoot(self::targetType($call['to']))) $depth[$key][] = $targetKey($call);
+                    }
+                    return ['expand' => (object) $expand, 'depth' => (object) $depth];
+                };
+                $limit = $graph->mode === 'direct' ? 1 : $graph->maxDepth;
+                $traversal = \ByteKitsune\MagoNative\Engine::walk($startKey, $limit, $graph->mode === 'transitive', $callback);
+                $visits = $traversal['visits'];
+                foreach ($visits as $index => $visit) {
+                    $seen[$visit['node']] = true;
+                    if ($visit['depth'] === 0) continue;
+                    $permission = $graph->permission($scopeId, $nodes[$visit['node']]['symbol'], $startCaptures[$startKey]);
+                    if ($permission === null) continue;
+                    $proof = [];
+                    for ($cursor = $index; $visits[$cursor]['parent'] !== null; $cursor = $visits[$cursor]['parent']) {
+                        $parent = $visits[$cursor]['parent'];
+                        $proof[] = $edgeCache[$visits[$parent]['node']][$visits[$cursor]['edge']];
+                    }
+                    $proofs[] = [$scopeId, $permission, array_reverse($proof), $nodes[$visit['node']]];
+                }
+                if ($traversal['depth_warning']) $depthWarnings[$scopeId . ':' . $startKey] = [$start['file'], $start['position'], 'Configured graph depth was reached before traversal completed'];
+            }
+            for ($index = 0; !$native && $index < count($queue); $index++) {
                 $context->cancellation->throwIfCancelled();
                 [$current, $proof] = $queue[$index];
                 if ($proof !== []) {

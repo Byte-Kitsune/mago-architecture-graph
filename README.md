@@ -386,3 +386,15 @@ Duplicate symbol declarations suppress their metadata. Extraction is bounded to
 32 markers, 64 annotations per declaration, 4096 message bytes, 50000 symbols and
 250000 reference/call sites. These annotations never affect architecture policy
 findings.
+
+
+## Native computational backend
+
+An opt-in Rust backend is available on this development branch. It preserves
+the existing Mago PHP worker and configuration API. Build with
+`cargo build --release --locked --manifest-path native/Cargo.toml` and set
+`MAGO_NATIVE_ENGINE` to that executable before running Mago.
+
+See [native backend details](NATIVE_BACKEND.md) for migrated components,
+compatibility fallback and validation. This does not change the default backend
+of the previously published releases.
