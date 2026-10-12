@@ -16,7 +16,7 @@ CI checks this floor and the latest compatible 1.x release.
 Requires PHP 8.2+ and Mago >=1.50.0,<2.0.0. Pin the stable release in your project:
 
 ```sh
-composer require --dev "carthage-software/mago:^1.50" byte-kitsune/mago-architecture-graph:1.1.0
+composer require --dev "carthage-software/mago:^1.50" byte-kitsune/mago-architecture-graph:1.2.0
 ```
 
 Add an extension host to `mago.toml` (keep your normal `[source]` paths configured):

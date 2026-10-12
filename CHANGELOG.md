@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 — 2026-10-12
 
 - Check literal class references by default, including constructor types and other references in the same namespace without imports. Policies can explicitly select `dependency_mode: imports` to preserve the historical behavior.
 - Add real-Mago regression coverage for ten unimported peer-entrypoint dependencies, declaration-path resolution, duplicate references and allowed self/data dependencies.
