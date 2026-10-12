@@ -1,0 +1,114 @@
+{
+  "version": "1",
+  "source_root": "src",
+  "namespace_root": "App",
+  "modules": [
+    {
+      "id": "lobby",
+      "path_pattern": "src/Lobby/",
+      "namespace_prefix": "App\\Lobby",
+      "layer": "lobby",
+      "allowed_target_layers": [
+        "gate"
+      ],
+      "entrypoint_suffix": "",
+      "allowed_family_entrypoints": [
+        {
+          "target_family": "workshop",
+          "target_layer": "gate"
+        }
+      ]
+    },
+    {
+      "id": "visitor",
+      "path_pattern": "src/Visitors/",
+      "namespace_prefix": "App\\Visitors",
+      "layer": "lobby",
+      "allowed_target_layers": [
+        "gate"
+      ],
+      "entrypoint_suffix": ""
+    },
+    {
+      "id": "gate",
+      "path_pattern": "src/Workshop/*/Gate/",
+      "namespace_prefix": "App\\Workshop",
+      "layer": "gate",
+      "allowed_target_layers": [
+        "step"
+      ],
+      "entrypoint_suffix": "Gate",
+      "module_family": "workshop",
+      "module_family_captures": [
+        "owner"
+      ],
+      "entrypoint_path_pattern": "src/Workshop/*/Gate/EntryGate.php",
+      "forbid_peer_entrypoints": true
+    },
+    {
+      "id": "step",
+      "path_pattern": "src/Workshop/*/Steps/",
+      "namespace_prefix": "App\\Workshop",
+      "layer": "step",
+      "allowed_target_layers": [
+        "tool"
+      ],
+      "entrypoint_suffix": "Step",
+      "module_family": "workshop",
+      "module_family_captures": [
+        "owner"
+      ],
+      "entrypoint_path_pattern": "src/Workshop/*/Steps/EntryStep.php"
+    },
+    {
+      "id": "tool",
+      "path_pattern": "src/Workshop/*/Tools/",
+      "namespace_prefix": "App\\Workshop",
+      "layer": "tool",
+      "allowed_target_layers": [],
+      "entrypoint_suffix": "Tool",
+      "module_family": "workshop",
+      "module_family_captures": [
+        "owner"
+      ]
+    }
+  ],
+  "scope_graph": {
+    "version": "1",
+    "enabled": true,
+    "mode": "transitive",
+    "max_depth": 6,
+    "source_root": "src",
+    "namespace_root": "App",
+    "scopes": [
+      {
+        "id": "steps",
+        "path_pattern": "src/Workshop/*/Steps/",
+        "path_captures": [
+          "owner"
+        ],
+        "namespace_prefix": "App\\Workshop"
+      }
+    ],
+    "method_permissions": [
+      {
+        "scope_id": "steps",
+        "target_type_pattern": "App\\Workshop\\*\\Tools\\EntryTool",
+        "method": "ping",
+        "decision": "deny",
+        "policy_id": "foreign-tool",
+        "rationale": "Tools of another workshop are unavailable"
+      },
+      {
+        "scope_id": "steps",
+        "target_type_pattern": "App\\Workshop\\{owner}\\Tools\\EntryTool",
+        "method": "ping",
+        "decision": "allow",
+        "policy_id": "own-tool",
+        "rationale": "The entry may use its own workshop tool"
+      }
+    ],
+    "unlisted_method_policy": "allow",
+    "exclusions": []
+  }
+}

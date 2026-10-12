@@ -9,10 +9,14 @@ See the [runnable example](examples/README.md) for a controller that crosses a h
 
 ## Install and run
 
-Requires PHP 8.2+ and Mago 1.50. Pin the stable release in your project:
+The Composer requirement `^1.50` permits later Mago 1.x releases and excludes 2.x.
+Mago 1.50 remains the tested API floor; older releases are not covered.
+CI checks this floor and the latest compatible 1.x release.
+
+Requires PHP 8.2+ and Mago >=1.50.0,<2.0.0. Pin the stable release in your project:
 
 ```sh
-composer require --dev carthage-software/mago:1.50.0 byte-kitsune/mago-architecture-graph:1.0.0
+composer require --dev "carthage-software/mago:^1.50" byte-kitsune/mago-architecture-graph:1.1.0
 ```
 
 Add an extension host to `mago.toml` (keep your normal `[source]` paths configured):
@@ -133,6 +137,153 @@ $extension = ArchitectureGraphExtension::create(
 ```
 
 The graph keeps those two `Processor` instances separate through private `$this` calls and constructor-injected properties. Exact container lookups retain the selected service ID; an unbound construction does not borrow either service's constructor proof. The [service constructor fixture](tests/service-constructor-corpus) exercises this case. A compiled reference is needed for runtime service parity: parsing service YAML or PHP cannot establish all effective aliases, environment overrides and argument values. The caller must regenerate and verify that reference for the analyzed revision; this extension does not compile or execute the application container.
+
+## Explicit family entrances and reusable graph scopes
+
+Module families are independent of layer names. Give related modules the same
+`module_family` and capture names to isolate their instances across layers.
+Existing policies keep their current behavior: a caller without a family cannot
+import a family target unless an explicit entrance grant is configured.
+
+A caller outside a family can be allowed to import its public entrypoints:
+
+```json
+{
+  "id": "lobby",
+  "path_pattern": "src/Lobby/",
+  "namespace_prefix": "App\\Lobby",
+  "layer": "lobby",
+  "allowed_target_layers": ["gate"],
+  "entrypoint_suffix": "",
+  "allowed_family_entrypoints": [
+    {"target_family": "workshop", "target_layer": "gate"}
+  ]
+}
+```
+
+Add this source module alongside the target family modules, which retain their
+`entrypoint_suffix` and optional `entrypoint_path_pattern`. Each grant applies to
+any instance of the named family in exactly the named layer, and only to its
+configured entrypoint classes. It does not expose internal classes, other layers,
+or change `forbid_peer_entrypoints`. A source with its own `module_family` may
+also have an explicit entrance grant, including a narrowly configured shared-data
+exception within its family. Without a grant, distinct owners remain isolated.
+Existing `allowed_family_bindings` restrict cross-family access by equal named
+source and target captures; use these for a link tied to one target owner rather
+than an entrance into arbitrary public instances. The target layer must also be in
+`allowed_target_layers`, and the named family/layer must have an active module.
+The list is limited to 64 grants and rejects unknown fields or targets.
+
+Mark a target module with `"external_entrypoints_only": true` to reject
+references from its own family and owner to its configured entrypoint classes.
+This flag works across layers and is independent of directory names. It requires
+a module family. Public data-contract modules can keep the flag unset, so their
+own instance may use its records, enums and interfaces while peer instances stay
+blocked unless an explicit shared-data exception is configured. An entrance
+grant or matching same-family capture binding cannot override the own-instance
+entrypoint guard. Entrances from other
+families and capture-bound links still follow their explicit permissions.
+
+For example, configure a portal class as one module with this flag and its public
+data contracts as a separate module without it. Internal callers can use their
+own data contracts but cannot call back into their portal. Public modules retain
+family captures so cross-instance data dependencies can still be rejected.
+
+Call-graph scopes can select repeated directories using `path_pattern` instead of
+`path_prefix`. Each `*` matches one nonempty path segment; a trailing `/` includes
+that directory's descendants. `path_captures` optionally names the wildcard
+segments in order, with at most 16 unique names. Use one selector per scope;
+literal `path_prefix` rules retain their previous semantics. Scopes stay ordered;
+the first matching path and namespace selects the scope. Namespace prefixes
+remain literal and must match as well.
+
+The following lists belong inside the existing `scope_graph` configuration:
+
+```json
+{
+  "scopes": [
+    {
+      "id": "steps",
+      "path_pattern": "src/Workshop/*/Steps/",
+      "path_captures": ["owner"],
+      "namespace_prefix": "App\\Workshop"
+    }
+  ],
+  "method_permissions": [
+    {
+      "scope_id": "steps",
+      "target_type_pattern": "App\\Workshop\\*\\Tools\\EntryTool",
+      "method": "ping",
+      "decision": "deny",
+      "policy_id": "foreign-tool",
+      "rationale": "Tools of another workshop are unavailable"
+    },
+    {
+      "scope_id": "steps",
+      "target_type_pattern": "App\\Workshop\\{owner}\\Tools\\EntryTool",
+      "method": "ping",
+      "decision": "allow",
+      "policy_id": "own-tool",
+      "rationale": "The entry may use its own workshop tool"
+    }
+  ]
+}
+```
+
+Choose either the existing literal `target_type` or `target_type_pattern`.
+A type pattern's `*` matches one namespace segment; `{owner}` binds one segment
+from the original scope entry path and remains fixed throughout transitive
+traversal. Bindings are literal PHP namespace identifiers, not regular expressions.
+Unknown capture names, partial wildcards, recursive `**`, unsafe paths and
+ambiguous selector shapes are rejected. Method-specific rules take precedence;
+then more literal namespace segments, then more bound segments win. A denial
+wins equal specificity, independently of list order. Pair a bound allowance with
+an explicit wildcard denial to reject other instances. Patterns are limited to
+2048 bytes and 16 path wildcards. Bound graph proofs include `scope_captures` alongside the existing
+source-to-target call edges; literal graph proof fields are unchanged.
+
+The [fictional instance fixture](tests/instance-corpus/policy.json) demonstrates
+public entrances, inaccessible internals, peer restrictions, independent owners,
+and direct/transitive isolation using the actual Mago worker:
+
+```sh
+sh tests/instance-smoke.sh
+```
+
+## Check literal class dependencies
+
+By default, boundary rules check class imports. Set the top-level policy field
+`"dependency_mode": "class-references"` to check literal class dependencies from
+the complete analyzed file snapshot, including references without imports.
+This mode resolves import aliases and grouped class imports, property and
+parameter types, return types, nullable/union/intersection types, inheritance,
+interfaces, traits, attributes, catch types, construction, static member access,
+`instanceof`, and class constants. It reports each resolved target once per
+source namespace/file, so importing a class and using it does not duplicate a
+boundary finding. References to a class from that same class (for example, a
+factory returning its own type) are not incoming dependencies. Function/constant imports, calls, and arbitrary strings are
+not mistaken for classes.
+
+No source is executed. Dynamic class names, reflection strings, PHPDoc-only
+references and runtime service resolution are outside this literal dependency
+mode. Known class names and declaration paths come from Mago's codebase snapshot;
+undeclared targets use the existing configured source-root/namespace-root mapping;
+it does not claim parity with another dependency analyzer's collectors. Each
+file is limited to 8 MiB and 100,000 literal references. Parse failures and
+exceeded limits produce `architecture-reference-incomplete` errors, rather than
+a clean result with partial reference coverage. The module policy's namespace,
+path, exclusions, owner bindings and entrypoint rules remain in force.
+
+The [neutral requirements fixture](tests/requirements-corpus/policy.json) covers
+cross-family public entrances, capture-bound links, peer isolation, shared-data
+exceptions and internal entrypoint restrictions. It uses repeated cells, mixes,
+links, routes, bundles, parcels and screens with no concrete owner names in the
+policy. Run the same acceptance matrix against imports, resolved class references,
+and generated fully qualified references without ordinary import aliases:
+
+```sh
+sh tests/requirements-smoke.sh
+```
 
 ## Read the results
 

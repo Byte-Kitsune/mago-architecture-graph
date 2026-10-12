@@ -272,9 +272,13 @@ final class GraphHook implements AfterAnalysisHook
         };
         foreach (array_keys($files) as $path) if ($this->graphObserver !== null || $graph->possibleScopePath($path)) $indexFile($path);
         $starts = [];
+        $startCaptures = [];
         foreach ($nodes as $key => $node) {
             $scope = $graph->scopeFor($node['path'], $node['class']);
-            if ($scope !== null && (($node['service_id'] ?? null) !== null || !isset($serviceVariants[strtolower($node['class'])]))) $starts[$key] = $scope['id'];
+            if ($scope !== null && (($node['service_id'] ?? null) !== null || !isset($serviceVariants[strtolower($node['class'])]))) {
+                $starts[$key] = $scope['id'];
+                $startCaptures[$key] = $scope['captures'] ?? [];
+            }
         }
         ksort($starts);
         if ($this->declarations !== null) {
@@ -414,7 +418,7 @@ final class GraphHook implements AfterAnalysisHook
                 $context->cancellation->throwIfCancelled();
                 [$current, $proof] = $queue[$index];
                 if ($proof !== []) {
-                    $permission = $graph->permission($scopeId, $nodes[$current]['symbol']);
+                    $permission = $graph->permission($scopeId, $nodes[$current]['symbol'], $startCaptures[$startKey]);
                     if ($permission !== null) {
                         $proofs[] = [$scopeId, $permission, $proof, $nodes[$current]];
                     }
@@ -517,6 +521,7 @@ final class GraphHook implements AfterAnalysisHook
     {
         $edges = array_map(static fn ($edge) => array_intersect_key($edge, array_flip(['from', 'to', 'path', 'line', 'column', 'evidence'])), $proof);
         $evidence = ['schema_version' => '1', 'scope' => $scope, 'target' => $target['symbol'], 'target_path' => $target['path'], 'target_line' => $target['line'], 'policy_id' => $permission['policy_id'], 'complete' => $complete, 'edges' => $edges];
+        if (isset($permission['scope_captures'])) $evidence['scope_captures'] = $permission['scope_captures'];
         return 'graph-evidence: ' . json_encode($evidence, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 

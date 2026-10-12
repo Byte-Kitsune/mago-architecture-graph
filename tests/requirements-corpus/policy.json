@@ -1,0 +1,257 @@
+{
+  "version": "1",
+  "source_root": "app",
+  "namespace_root": "Sample",
+  "modules": [
+    {
+      "id": "cell-service",
+      "path_pattern": "app/Cells/*/Service/",
+      "namespace_prefix": "Sample",
+      "layer": "cell-core",
+      "allowed_target_layers": [
+        "cell-data",
+        "cell-portal"
+      ],
+      "entrypoint_suffix": "",
+      "module_family": "cell",
+      "module_family_captures": [
+        "owner"
+      ]
+    },
+    {
+      "id": "cell-data",
+      "path_pattern": "app/Cells/*/Api/Value/",
+      "namespace_prefix": "Sample",
+      "layer": "cell-data",
+      "allowed_target_layers": [],
+      "entrypoint_suffix": "",
+      "module_family": "cell",
+      "module_family_captures": [
+        "owner"
+      ]
+    },
+    {
+      "id": "cell-portal",
+      "path_pattern": "app/Cells/*/Api/Portal.php",
+      "namespace_prefix": "Sample",
+      "layer": "cell-portal",
+      "allowed_target_layers": [],
+      "entrypoint_suffix": "Portal",
+      "module_family": "cell",
+      "module_family_captures": [
+        "owner"
+      ],
+      "external_entrypoints_only": true
+    },
+    {
+      "id": "cell-private",
+      "path_pattern": "app/Cells/*/Private/",
+      "namespace_prefix": "Sample",
+      "layer": "cell-private",
+      "allowed_target_layers": [],
+      "entrypoint_suffix": "",
+      "module_family": "cell",
+      "module_family_captures": [
+        "owner"
+      ]
+    },
+    {
+      "id": "mix-service",
+      "path_pattern": "app/Mixes/*/Service/",
+      "namespace_prefix": "Sample",
+      "layer": "mix",
+      "allowed_target_layers": [
+        "cell-portal",
+        "cell-data"
+      ],
+      "entrypoint_suffix": "",
+      "module_family": "mix",
+      "module_family_captures": [
+        "owner"
+      ],
+      "allowed_family_entrypoints": [
+        {
+          "target_family": "cell",
+          "target_layer": "cell-portal"
+        },
+        {
+          "target_family": "cell",
+          "target_layer": "cell-data"
+        }
+      ]
+    },
+    {
+      "id": "link-service",
+      "path_pattern": "app/Links/*/Service/",
+      "namespace_prefix": "Sample",
+      "layer": "link",
+      "allowed_target_layers": [
+        "cell-portal"
+      ],
+      "entrypoint_suffix": "",
+      "module_family": "link",
+      "module_family_captures": [
+        "owner"
+      ],
+      "allowed_family_bindings": [
+        {
+          "target_family": "cell",
+          "target_layer": "cell-portal",
+          "source_capture": "owner",
+          "target_capture": "owner"
+        }
+      ]
+    },
+    {
+      "id": "route-service",
+      "path_pattern": "app/Routes/*/Service/",
+      "namespace_prefix": "Sample",
+      "layer": "route-core",
+      "allowed_target_layers": [
+        "route-data",
+        "route-portal"
+      ],
+      "entrypoint_suffix": "",
+      "module_family": "route",
+      "module_family_captures": [
+        "owner"
+      ]
+    },
+    {
+      "id": "route-data",
+      "path_pattern": "app/Routes/*/Api/Value/",
+      "namespace_prefix": "Sample",
+      "layer": "route-data",
+      "allowed_target_layers": [],
+      "entrypoint_suffix": "",
+      "module_family": "route",
+      "module_family_captures": [
+        "owner"
+      ]
+    },
+    {
+      "id": "route-portal",
+      "path_pattern": "app/Routes/*/Api/Hub.php",
+      "namespace_prefix": "Sample",
+      "layer": "route-portal",
+      "allowed_target_layers": [],
+      "entrypoint_suffix": "Hub",
+      "module_family": "route",
+      "module_family_captures": [
+        "owner"
+      ],
+      "external_entrypoints_only": true
+    },
+    {
+      "id": "bundle-service",
+      "path_pattern": "app/Bundles/*/Service/",
+      "namespace_prefix": "Sample",
+      "layer": "bundle",
+      "allowed_target_layers": [
+        "route-portal"
+      ],
+      "entrypoint_suffix": "",
+      "module_family": "bundle",
+      "module_family_captures": [
+        "owner"
+      ],
+      "allowed_family_entrypoints": [
+        {
+          "target_family": "route",
+          "target_layer": "route-portal"
+        }
+      ]
+    },
+    {
+      "id": "parcel-service",
+      "path_pattern": "app/Parcels/*/Service/",
+      "namespace_prefix": "Sample",
+      "layer": "parcel-core",
+      "allowed_target_layers": [
+        "parcel-data"
+      ],
+      "entrypoint_suffix": "",
+      "module_family": "parcel",
+      "module_family_captures": [
+        "owner"
+      ]
+    },
+    {
+      "id": "parcel-data",
+      "path_pattern": "app/Parcels/*/Api/Value/",
+      "namespace_prefix": "Sample",
+      "layer": "parcel-data",
+      "allowed_target_layers": [],
+      "entrypoint_suffix": "",
+      "module_family": "parcel",
+      "module_family_captures": [
+        "owner"
+      ]
+    },
+    {
+      "id": "screen-entry",
+      "path_pattern": "app/Screens/*/Entry/",
+      "namespace_prefix": "Sample",
+      "layer": "screen-entry",
+      "allowed_target_layers": [
+        "screen-shared",
+        "screen-entry",
+        "cell-portal",
+        "cell-data"
+      ],
+      "entrypoint_suffix": "Controller",
+      "module_family": "screen",
+      "module_family_captures": [
+        "owner"
+      ],
+      "external_entrypoints_only": true,
+      "allowed_family_entrypoints": [
+        {
+          "target_family": "screen",
+          "target_layer": "screen-shared"
+        },
+        {
+          "target_family": "cell",
+          "target_layer": "cell-portal"
+        },
+        {
+          "target_family": "cell",
+          "target_layer": "cell-data"
+        }
+      ]
+    },
+    {
+      "id": "screen-shared",
+      "path_pattern": "app/Screens/*/Shared/",
+      "namespace_prefix": "Sample",
+      "layer": "screen-shared",
+      "allowed_target_layers": [],
+      "entrypoint_suffix": "",
+      "module_family": "screen",
+      "module_family_captures": [
+        "owner"
+      ]
+    },
+    {
+      "id": "outside",
+      "path_pattern": "app/Outside/Entry/",
+      "namespace_prefix": "Sample",
+      "layer": "outside",
+      "allowed_target_layers": [
+        "cell-portal",
+        "cell-data"
+      ],
+      "entrypoint_suffix": "",
+      "allowed_family_entrypoints": [
+        {
+          "target_family": "cell",
+          "target_layer": "cell-portal"
+        },
+        {
+          "target_family": "cell",
+          "target_layer": "cell-data"
+        }
+      ]
+    }
+  ]
+}

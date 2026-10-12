@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.0 — 2026-10-12
+
+- Allow Mago >=1.50.0,<2.0.0 instead of restricting dependencies to the 1.50 minor series.
+- Use a major-version pin in executable Mago configurations and test the supported API floor plus latest compatible 1.x in CI.
+
+- Add explicit public-entrypoint grants from configured source modules without relaxing internal visibility, layer checks, peer restrictions, or owner isolation.
+- Add target-side internal entrypoint restrictions independent of folder names, and narrowly configured shared-data entrance exceptions.
+- Add optional resolved literal class dependencies beyond imports, with alias/group/type support and explicit coverage errors on parse or size limits.
+- Add wildcard graph scope paths and named captures, with namespace-segment target patterns bound to the original entry throughout transitive traversal.
+- Resolve graph permission specificity deterministically and retain capture bindings in graph evidence.
+- Verify positive and negative instance rules, unsafe configurations, and repeated real Mago reports using fictional workshop fixtures.
+
 ## 1.0.0 — 2026-10-12
 
 - Publish the existing analyzer and inspection APIs as the first stable release.

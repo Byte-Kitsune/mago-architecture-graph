@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "d549a5544a7a7f81d18ffc7eb8cd010d",
+    "content-hash": "2a0b220be1ca7d0936f72195a23e6667",
     "packages": [
         {
             "name": "carthage-software/mago",

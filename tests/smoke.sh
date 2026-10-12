@@ -25,7 +25,7 @@ if (count($attestations)!==1) throw new RuntimeException("Expected one architect
 $note=$attestations[0]["notes"][0]??"";
 if (!str_starts_with($note,"extension-attestation: ")) throw new RuntimeException("Missing extension attestation payload.");
 $attestation=json_decode(substr($note,strlen("extension-attestation: ")),true,512,JSON_THROW_ON_ERROR);
-if (($attestation["schema_version"]??null)!=="1" || ($attestation["extension"]??null)!=="byte-kitsune/architecture-graph" || ($attestation["version"]??null)!=="1.0.0" || ($attestation["capability"]??null)!=="scope_graph" || ($attestation["complete"]??null)!==false || ($attestation["source_files"]??0)<1) throw new RuntimeException("Invalid architecture analysis attestation.");
+if (($attestation["schema_version"]??null)!=="1" || ($attestation["extension"]??null)!=="byte-kitsune/architecture-graph" || ($attestation["version"]??null)!=="1.1.0" || ($attestation["capability"]??null)!=="scope_graph" || ($attestation["complete"]??null)!==false || ($attestation["source_files"]??0)<1) throw new RuntimeException("Invalid architecture analysis attestation.");
 foreach (["scope-forbidden-entrypoint-method"=>1,"scope-allowed-entrypoint-method"=>3,"scope-graph-incomplete"=>1] as $suffix=>$expected) {
     $matches=array_values(array_filter($issues,fn($i)=>$i["code"]==="byte-kitsune/architecture-graph/".$suffix));
     if (count($matches)!==$expected) { fwrite(STDERR,"Expected $expected $suffix, got ".count($matches)."\n"); exit(1); }
