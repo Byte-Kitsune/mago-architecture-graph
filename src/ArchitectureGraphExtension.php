@@ -9,7 +9,7 @@ use Mago\Sdk\Extension;
 
 final class ArchitectureGraphExtension
 {
-    public const VERSION = '1.3.0-RC2';
+    public const VERSION = '1.3.0-RC3';
     /**
      * The policy and literal service bindings are trusted operator inputs, never selected by analyzed PHP.
      * @param \Closure(array<string, mixed>): void|null $graphObserver Optional complete source graph export; independent of policy findings.
