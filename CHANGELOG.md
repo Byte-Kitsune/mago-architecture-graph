@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0-RC1 — pending project validation
+
+- Follow proven literal eager callback edges; preserve deferred/generator/empty controls and unresolved graph gaps. Expose declaration-only framework hook inventory.
+- Synchronize shared engine 0.4.0 and its separate cache with the Doctrine Query Budget callback-effects candidate.
+- Preserve extension-specific policy behavior and add shared callback/evaluation-order regression tests.
+- Until candidate release assets exist, use a matching local/CI engine through `MAGO_NATIVE_ENGINE`; update all three adapters together in a shared worker.
+
 ## 1.3.2 — 2026-10-13
 
 - Add statically linked Linux musl binaries and SHA-256 checksums for x86_64 and aarch64/arm64.
