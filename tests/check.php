@@ -136,5 +136,5 @@ if (count($direct) !== 1 || count($instance) !== 0 || count($functions) !== 0 ||
 $parsed = $parser->parse('<?php final class Deferred { public function run(): void { Gateway::denied(...); $fn(); \\call_user_func([Gateway::class, "denied"]); } }');
 $class = $finder->findFirstInstanceOf($parsed, Class_::class);
 [$direct, $instance, $functions, $creations, $unknown] = CallCollector::collect($class->getMethod('run')->stmts);
-if ($direct !== [] || $instance !== [] || count($functions) !== 2 || $creations !== [] || count($unknown) !== 1) throw new RuntimeException('Callable creation or dynamic function invocation was misclassified.');
+if (count($direct) !== 1 || $direct[0]->name->toString() !== "denied" || $instance !== [] || count($functions) !== 1 || $creations !== [] || count($unknown) !== 1) throw new RuntimeException('Callable creation or dynamic function invocation was misclassified.');
 echo "Call collection checks passed\n";

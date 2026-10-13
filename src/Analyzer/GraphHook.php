@@ -111,7 +111,7 @@ final class GraphHook implements AfterAnalysisHook
                                 continue;
                             }
                             $targetClass = strtolower($call->class->toString()) === 'self' ? $className : ($call->class->getAttribute('resolvedName') ?? $call->class)->toString();
-                            $calls[] = self::edge($symbol, $targetClass . '::' . $call->name->toString(), $path, $source->path, $source->contents, $call, 'explicit static call', strtolower($call->class->toString()) === 'self' ? $serviceId : null);
+                            $calls[] = self::edge($symbol, $targetClass . '::' . $call->name->toString(), $path, $source->path, $source->contents, $call, $call->getAttribute('eagerCallback') ? 'literal static callback' : 'explicit static call', strtolower($call->class->toString()) === 'self' ? $serviceId : null);
                         }
                         $consumedLookups = [];
                         $localServiceCalls = $this->straightLineContainerCalls($method->stmts ?? [], $properties, $graph);
@@ -160,6 +160,7 @@ final class GraphHook implements AfterAnalysisHook
                                 continue;
                             }
                             [$targetClass, $evidence, $targetService] = $binding;
+                            if ($call->getAttribute('eagerCallback')) $evidence = 'literal instance callback via ' . $evidence;
                             $calls[] = self::edge($symbol, $targetClass . '::' . $call->name->toString(), $path, $source->path, $source->contents, $call, $evidence, $targetService ?? ($call->var instanceof Node\Expr\Variable && $call->var->name === 'this' ? $serviceId : null));
                         }
                         foreach ($creations as $creation) {
