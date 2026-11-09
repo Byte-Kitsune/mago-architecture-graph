@@ -399,6 +399,6 @@ See [native backend details](NATIVE_BACKEND.md) for offline installation, source
 builds, explicit reference-backend comparisons and the pending project-specific
 recursion investigation.
 
-## Framework callback candidate
+## Framework callbacks
 
-Follow proven literal eager callback edges; preserve deferred/generator/empty controls and unresolved graph gaps. Expose declaration-only framework hook inventory. The source-snapshot API is `inspectFrameworkHooks($analysis)`. Hook declarations do not prove request activation. All engine-0.4.0 companion packages must be updated together. See [callback coverage](https://github.com/Byte-Kitsune/mago-doctrine-query-budget/blob/feat/callback-effects-engine-0.4/CALLBACK_COVERAGE.md) for supported families and conservative limits.
+Follow proven literal eager callback edges; preserve deferred/generator/empty controls and unresolved graph gaps. Expose declaration-only framework hook inventory. The source-snapshot API is `inspectFrameworkHooks($analysis)`. Hook declarations do not prove request activation. All engine-0.4.0 companion packages must be updated together. See [callback coverage](https://github.com/Byte-Kitsune/mago-doctrine-query-budget/blob/main/CALLBACK_COVERAGE.md) for supported families and conservative limits.

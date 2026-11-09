@@ -9,7 +9,7 @@ use Mago\Sdk\Extension;
 
 final class ArchitectureGraphExtension
 {
-    public const VERSION = '1.4.0-RC1';
+    public const VERSION = '1.4.0';
     /** Name-resolved hook candidates from the exact snapshot; declarations do not prove activation. */
     public static function inspectFrameworkHooks(\Mago\Sdk\Analyzer\ProjectAnalysis $analysis): array
     {
