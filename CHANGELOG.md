@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.0 — 2026-11-09
+
+- Publish the 1.4.0-RC1 functionality as a stable release: proven literal eager callback edges, declaration-only framework hook inventory and shared engine 0.4.0.
+- Publish engine 0.4.0 Linux GNU/musl x86_64/arm64 and macOS arm64/x86_64 binaries with SHA-256 checksums as the shared asset source; update all engine-0.4.0 adapters together in a shared worker.
+
 ## 1.4.0-RC1 — pending project validation
 
 - Follow proven literal eager callback edges; preserve deferred/generator/empty controls and unresolved graph gaps. Expose declaration-only framework hook inventory.
